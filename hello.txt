@@ -1,1 +1,88 @@
-Hi there
+ /*This page walks through an example Spark SQL program using DataFrames – how to implement, build and run.  The technologies being used are:
+•Platform:  Cloudera
+•Data Storage:  Hive
+•Programming Language:  Java
+•Java Development Kit:  Eclipse 
+*/
+...
+import org.apache.spark.SparkConf;
+import org.apache.spark.SparkContext;
+import org.apache.spark.sql.DataFrame;
+import org.apache.spark.sql.hive.HiveContext;
+...
+private static SparkContext connectSpark() {
+	String appName = "simpleExample";  		// this is the name of your Spark job
+ 
+	conf = new SparkConf().setAppName(appName);	// set the Spark Master at the command line vs. programmatically
+	sc = new SparkContext(conf);
+	return sc;
+}
+ 
+private static void runQuery(String queryString, HiveContext sqlContext, DataFrame df) {
+	System.out.println("\nExecuting " + queryString);
+	long start = System.currentTimeMillis();
+	df = sqlContext.sql(queryString);
+	df.explain();	//  Explain the plan for executing this query
+	df.show();	//  Display the first 20 lines of the resulting set.  Note that column values are truncated to ~20 characters
+	long end = System.currentTimeMillis();
+	System.out.printf("\ncompleted in %.02f min\n", (float) ((float) (end - start) / 1000.0 / 60.0));
+	return;
+}
+
+public static void main(String[] args) throws Exception {
+	String queryString;
+    SparkContext sc = connectSpark();
+	HiveContext sqlContext = new HiveContext(sc);
+	sqlContext.setKeyspace(keyspace);
+	DataFrame df1 = null;
+	DataFrame df2 = null;
+	DataFrame df3 = null;
+ 
+	//  Join tables in 2 different databases and aggregate results
+	queryString = "SELECT bcc.ben_bnk_id, btvc.bene_acct_id, bcc.dest_cntry_cd, avg(btvc.valid_count) as avg_valid_count "
+			+ " from fraud.bene_cross_country as bcc join fraud.bene_thresh_valid_count as btvc " 
+			+ " where bcc.ben_bnk_id = btvc.bene_bank_id and bcc.ben_acct_id = btvc.bene_acct_id and bcc.dest_cntry_cd = btvc.dest_cntry_cd " 
+			+ " group by bcc.ben_bnk_id, btvc.bene_acct_id, bcc.dest_cntry_cd";
+	runQuery(queryString, sqlContext, df1);
+ 
+	//  Query to join 7 different tables
+	queryString = "SELECT tf.trn_key, tf.trn, tf.sys_id, tf.trn_date, tf.business_date, tf.value_date, "
+        		+ "cus.legal_name, "
+        		+ "tf.amount, tf.local_currency_code, tf.local_amount, tf.source_site, tf.source_type, "
+        		+ "acct.acct_nbr, acct.country_code, acct.country_name, acct.country_sub_region, "
+        		+ "b.branch_code, b.branch_name, "
+        		+ "cur.currency_name, cur.usd_rate, "
+        		+ "td.acct_pty1, td.ult_bene1, td.cr_id, td.dr_id, "
+        		+ "p.payment_method, p.inst_mode, p.dr_cr_ind "
+      			+ "FROM vm_branch as b "
+      			+ "INNER JOIN vm_payment as p "
+      			+ "INNER JOIN vm_currency as cur "
+      			+ "INNER JOIN transaction_fact as tf "
+      			+ "INNER JOIN transaction_details as td "
+     			+ "INNER JOIN vm_customer as cus "
+      			+ "INNER JOIN vm_account as acct "
+      			+ "WHERE b.finl_ent = acct.finl_ent "
+      			+ "AND p.payment_key = tf.payment_key "
+      			+ "AND cur.currency_code = tf.local_currency_code "
+      			+ "AND cur.gmis_time_key = tf.time_key "
+      			+ "AND tf.sys_id = td.sys_id "
+      			+ "AND tf.trn = td.trn "
+      			+ "AND tf.trn_date = td.trn_date "
+	     		+ "AND (td.acct_pty1 is not null OR td.ult_bene1 is not null) "
+      			and cus.cas_id = acct.cas_id "
+      			and tf.account_key = acct.account_key ";
+ 
+	runQuery(queryString, sqlContext, df2);
+	
+	//  Save results in temp table
+	df1.registerTempTable("joinedTables");
+ 
+	//  Join temp table with another table
+	queryString = "select jt.trn, jv.trn_value from joinedTables as jt join transaction_value as jv where jt.trn = jv.trn";
+	runQuery(queryString, sqlContext, df3);
+ 
+	sqlContext.detachSession();
+	sc.stop();
+	disconnectSpark();
+	System.exit(0);
+}
