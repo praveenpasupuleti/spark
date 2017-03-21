@@ -1,0 +1,75 @@
+// scals transformations on RDD's
+//create RDD and load dataset
+scala>val textfile = sc.textfile("hdfs://localhost:9000/olymoix_data.csv")
+
+//map take each row as input and return an RDD for the row.
+// splitting the each record by \t delimeter.
+scala> val map_test = testFile.map(line => line.split("\t"))
+scala> map_test.collect
+res0: Array[Array[String]] = Array(Array(Micheal phelps, 23, USA, Swimming), Array(Micheal phelps, 19, USA, Swimming).....
+
+
+
+//creating two columns as a pair. we have used column1 and 2
+scala> val map_test1 = map_test.map(line => (line(1),line(2)))
+scala> map_test1.collect
+res0: Array[Array[String]] = Array(23, USA), (19,USA).....
+scala> map_test1.countByValue
+res25: scala.collection.map[(String, String),Long] = Map((23,USA) -> 2)
+
+// flatMap will take a iterable data as input and returns the RDD as the contents of the iterator. (flatten)
+scala> val flatmap_test = map_test.flatMap(line => line)
+scala> flatmap_test.collect
+res15: Array[String]= Array(Micheal phelps, 23, USA, Swimming, Micheal phelps, 19, USA, Swimming........)
+//filter based on country name
+scala> val fil = map_test.filter(line => line(2).contains("USA"))
+
+//reduceByKey is used pair of key and value pairs and combines all the values as unique
+scala> val map_test = map_test(line => (line(2),line(3).toInt))
+scala> map_test.collect
+res38: Array[String]= Array((USA, Swimming),(USA,Swimming)....
+
+//count
+scala> map_test.count
+res23: Long = 8618
+
+//Limit the number elements
+scala> map_test.reduceByKey(_*_).take(2)
+res39:Array[(String, Int)]= Array((USA, Swimming),(USA, Swimming))
+
+//Reduce operation
+//loading total number countries into map_test2 RDD
+scala> val map_test2 = map_test(line =>(line(3).toInt))
+scala> map_test2.reduce((a,b)=> a+b)
+res34: Int = 2
+//join
+scala> case class Item(id:String, name:String, unit:Int, companyId:String)
+
+scala> case class Company(companyId:String, name:String, city:String)
+
+scala> val i1 = Item("1", "first", 2, "c1")
+
+scala> val i2 = i1.copy(id="2", name="second")
+
+scala> val i3 = i1.copy(id="3", name="third", companyId="c2")
+
+scala> val items = sc.parallelize(List(i1,i2,i3))
+items: org.apache.spark.rdd.RDD[Item] = ParallelCollectionRDD[14] at parallelize at <console>:20
+
+scala> val c1 = Company("c1", "company-1", "city-1")
+
+scala> val c2 = Company("c2", "company-2", "city-2")
+
+scala> val companies = sc.parallelize(List(c1,c2))
+
+scala> val groupedItems = items.groupBy( x => x.companyId) 
+groupedItems: org.apache.spark.rdd.RDD[(String, Iterable[Item])] = ShuffledRDD[16] at groupBy at <console>:22
+
+scala> val groupedComp = companies.groupBy(x => x.companyId)
+groupedComp: org.apache.spark.rdd.RDD[(String, Iterable[Company])] = ShuffledRDD[18] at groupBy at <console>:20
+
+scala> groupedItems.join(groupedComp).take(10).foreach(println)
+
+14/12/12 00:52:32 INFO DAGScheduler: Job 5 finished: take at <console>:35, took 0.021870 s
+(c1,(CompactBuffer(Item(1,first,2,c1), Item(2,second,2,c1)),CompactBuffer(Company(c1,company-1,city-1))))
+(c2,(CompactBuffer(Item(3,third,2,c2)),CompactBuffer(Company(c2,company-2,city-2))))
