@@ -1,1 +1,426 @@
 
+"""
+This module will calculate the score for Share of Wallet.
+
+This module has the following function(s): 
+
+The brief description of these functions are available in the beginning of each function above the lines of code.
+
+1.  calculate_share_of_wallet
+2.  get_wc_tot_asset
+3.  get_wc_assetmix_mutl_fnd
+4.  get_wc_tot_asset_max
+5.  get_wc_assetmix_mutl_fnd_max
+6.  get_wc_final
+7.  get_wc_mf_final
+8.  get_sow_overall
+9.  get_rem_wall_overall
+10. get_rem_opp_overall
+11. get_sow_mutual_fund
+12. get_rem_wall_mutual_fund
+13. get_rem_opp_mutual_fund
+                 
+"""
+from pyspark import SparkConf, SparkContext,SQLContext,Row,HiveContext
+from pyspark.sql.types import IntegerType
+from pyspark.sql.types import StringType
+import hashlib
+from datetime import datetime
+import time
+import sys
+import datetime
+import math
+ 
+APP_NAME="Share of Wallet Score pyspark Application"
+
+def calculate_share_of_wallet(sc,properties_dict):    
+    """ calculate_share_of_wallet:This method will calculate the score for Share of Wallet: The below list of factors are used for the calculation 
+        of Retails PAS Score
+        
+        Input:sparkcontext,properties_dict
+        OUtput:Data Frame with contains po_id and 8 asset values which is the final score for Share of Wallet"""   
+        
+    
+    import sparkutils 
+    import debugutils
+    import dateutils
+    import sow_intermediate_factor
+    import wc_join_data
+    import best_age
+    sparkutils.quiet_logs(sc)
+    
+    #DEBUG = properties_dict.get( 'debug_flag' )
+    HiveCtx=HiveContext(sc)              
+#   Register the UDF to calculate the Share of Wallet factors    
+    sow_intermediate_factor_df = sow_intermediate_factor.calculate_sow_intermediate_factor(HiveCtx, properties_dict)
+#    sow_intermediate_factor_df=HiveCtx.read.format('parquet').load(properties_dict.get('sow_intermediate_factor_df_location'))
+    sow_intermediate_factor_df.registerTempTable( "sow_intermediate_factor_temp_table" )
+    
+    wc_join_data_df = wc_join_data.calculate_wc_join_data(HiveCtx, properties_dict)
+#    wc_join_data_df=HiveCtx.read.format('parquet').load(properties_dict.get('wc_join_data_df_location'))
+    wc_join_data_df.registerTempTable( "wc_join_data_table" )
+    
+    HiveCtx.udf.register("get_wc_tot_asset", get_wc_tot_asset, StringType())
+    HiveCtx.udf.register("get_wc_assetmix_mutl_fnd", get_wc_assetmix_mutl_fnd, StringType())
+    HiveCtx.udf.register("get_wc_tot_asset_max", get_wc_tot_asset_max, StringType())
+    HiveCtx.udf.register("get_wc_assetmix_mutl_fnd_max", get_wc_tot_asset, StringType())
+    HiveCtx.udf.register("get_age_cd", get_age_cd, IntegerType())
+
+    sow_factor_query = """SELECT        a.*
+                                       ,get_wc_tot_asset(f.wc_tot_asset) as wc_tot_asset
+                                       ,get_wc_assetmix_mutl_fnd(f.wc_assetmix_mutl_fnd) as wc_assetmix_mutl_fnd
+                                       ,get_wc_tot_asset_max(f.wc_tot_asset_max) as wc_tot_asset_max
+                                       ,get_wc_assetmix_mutl_fnd_max(f.wc_assetmix_mutl_fnd_max)  as wc_assetmix_mutl_fnd_max
+
+                          FROM          sow_intermediate_factor_temp_table AS a 
+                                       ,wc_join_data_table AS f
+
+                          WHERE         ( a.po_id               = f.po_id)
+                       """
+
+    sow_factor_df = HiveCtx.sql(sow_factor_query)
+    
+    HiveCtx.sql("DROP TABLE sow_intermediate_factor_temp_table")
+    HiveCtx.sql("DROP TABLE wc_join_data_table")
+       
+    if debugutils.is_debug( properties_dict ):
+        debugutils.debug_query_info("sow_factor_df",sow_factor_query,sow_factor_df)
+
+    HiveCtx.registerDataFrameAsTable(sow_factor_df, "sow_factor_temp_table")
+
+    HiveCtx.udf.register("get_wc_final", get_wc_final, StringType())
+    HiveCtx.udf.register("get_wc_mf_final", get_wc_mf_final, StringType())
+    
+    wallet_amount_query = """SELECT   po_id
+                                    ,total_mf_etf_assets 
+                                    ,total_vanguard_assets
+                                    ,get_wc_final(total_vanguard_assets,wc_tot_asset_max,wc_tot_asset) AS wc_final
+                                    ,get_wc_mf_final(total_vanguard_assets,wc_assetmix_mutl_fnd_max,wc_assetmix_mutl_fnd) AS wc_mf_final                                                                                   
+                            FROM     sow_factor_temp_table"""    
+                            
+                            
+    wallet_amount_df = HiveCtx.sql(wallet_amount_query)
+    
+    HiveCtx.sql("DROP TABLE sow_factor_temp_table")
+    #wallet_amount_df.repartition(400)
+    
+    if debugutils.is_debug( properties_dict ):
+        debugutils.debug_query_info("wallet_amount_df",wallet_amount_query,wallet_amount_df)
+        
+#   Register the UDF to calculate the Share of Wallet Scores
+    HiveCtx.registerDataFrameAsTable(wallet_amount_df, "wallet_amount_temp_table")
+    HiveCtx.udf.register("get_sow_overall", get_sow_overall, StringType())
+    HiveCtx.udf.register("get_rem_wall_overall", get_rem_wall_overall, StringType())    
+    HiveCtx.udf.register("get_rem_opp_overall", get_rem_opp_overall, StringType()) 
+    HiveCtx.udf.register("get_sow_mutual_fund", get_sow_mutual_fund, StringType())
+    HiveCtx.udf.register("get_rem_wall_mutual_fund", get_rem_wall_mutual_fund, StringType())
+    HiveCtx.udf.register("get_rem_opp_mutual_fund", get_rem_opp_mutual_fund, StringType())                                 
+
+    sow_rem_overall_query = """SELECT   po_id
+                                       ,total_mf_etf_assets 
+                                       ,total_vanguard_assets
+                                       ,get_sow_overall(total_vanguard_assets,wc_final)            AS sow_overall
+                                       ,get_rem_wall_overall(total_vanguard_assets,wc_final)       AS rem_wall_overall  
+                                       ,get_rem_opp_overall(total_vanguard_assets,wc_final)        AS rem_opp_overall 
+                                       ,get_sow_mutual_fund(total_mf_etf_assets,wc_mf_final)       AS sow_mutual_fund  
+                                       ,get_rem_wall_mutual_fund(total_mf_etf_assets,wc_mf_final)  AS rem_wall_mutual_fund
+                                       ,get_rem_opp_mutual_fund(total_mf_etf_assets ,wc_mf_final)  AS rem_opp_mutual_fund                                                                         
+                               FROM     wallet_amount_temp_table 
+                               ORDER BY po_id"""     
+                            
+
+    sow_rem_overall_df = HiveCtx.sql(sow_rem_overall_query)
+    HiveCtx.sql("DROP TABLE wallet_amount_temp_table")
+    
+    #sow_rem_overall_df.repartition(400)
+ 
+    if debugutils.is_debug( properties_dict ):
+        debugutils.debug_query_info("sow_rem_overall_df",sow_rem_overall_query,sow_rem_overall_df)
+        
+    
+    HiveCtx.registerDataFrameAsTable(sow_rem_overall_df, "sow_rem_overall_temp_table")
+    
+    score_sow_query       = """SELECT DISTINCT   po_id
+                                       ,sow_overall                 AS  rig_sow_overall_v3             
+                                       ,total_vanguard_assets       AS  rig_tot_vngrd_assets_v3 
+                                       ,rem_wall_overall            AS  rig_remain_wallet_overall_v3
+                                       ,rem_opp_overall             AS  rig_remain_opp_overall_v3
+                                       ,total_mf_etf_assets         AS  rig_tot_vngrd_mf_etf_assets_v3
+                                       ,sow_mutual_fund             AS  rig_sow_mf_etf_v3
+                                       ,rem_wall_mutual_fund        AS  rig_remain_wallet_mf_etf_v3
+                                       ,rem_opp_mutual_fund         AS  rig_remain_opp_mf_etf_v3                                                                    
+                               FROM     sow_rem_overall_temp_table
+                               WHERE    (total_vanguard_assets > 0 AND sow_overall >= 0) 
+                               ORDER BY po_id"""   
+                               
+    score_sow_df = HiveCtx.sql(score_sow_query)
+    #score_sow_df.show()
+    #score_sow_df.repartition(400)
+     
+    if debugutils.is_debug( properties_dict ):
+        debugutils.debug_query_info("score_sow_df",score_sow_query,score_sow_df)
+        
+    return score_sow_df 
+        
+
+def get_age_cd(dsh_best_age):
+    
+    """Calculates the age_cd for records from the tdsh_clnt table"""
+    
+    if (dsh_best_age < 18) or (dsh_best_age is None):
+        age_cd = 0
+    elif (18 <= dsh_best_age <= 24):
+        age_cd = 1
+    elif (25 <= dsh_best_age <= 34):
+        age_cd = 2
+    elif (35 <= dsh_best_age <= 44):
+        age_cd = 3
+    elif (45 <= dsh_best_age <= 54):
+        age_cd = 4
+    elif (55 <= dsh_best_age <= 64):
+        age_cd = 5
+    elif (65 <= dsh_best_age <= 74):
+        age_cd = 6
+    elif (dsh_best_age >= 75):
+        age_cd = 7
+    return age_cd
+
+def get_wc_tot_asset(wc_tot_asset):
+    
+    """ calculates the wc_tot_asset against each po_id from tdsh_car_extrnl table """
+         
+    if (wc_tot_asset == -2):
+        
+        return 0
+    else:
+        return wc_tot_asset
+    
+def get_wc_assetmix_mutl_fnd(wc_assetmix_mutl_fnd): 
+    
+    """ calculates the wc_assetmix_mutl_fnd against each po_id from tdsh_car_extrnl table """
+         
+    if (wc_assetmix_mutl_fnd == -2):
+        
+        return 0
+    else:
+        return wc_assetmix_mutl_fnd
+
+def get_wc_tot_asset_max(wc_tot_asset_max): 
+    
+    """ calculates the wc_tot_asset_max against each po_id from tdsh_car_extrnl table """
+         
+    if (wc_tot_asset_max == -99999999):
+        
+        return 0
+    else:
+        return wc_tot_asset_max
+
+def get_wc_assetmix_mutl_fnd_max(wc_assetmix_mutl_fnd_max):  
+    
+    """ calculates the wc_assetmix_mutl_fnd_max against each po_id from tdsh_car_extrnl table """
+         
+    if (wc_assetmix_mutl_fnd_max == -99999999):
+        
+        return 0
+    else:
+        return wc_assetmix_mutl_fnd_max   
+     
+
+
+def get_wc_final(total_vanguard_assets,wc_tot_asset_max,wc_tot_asset):   
+    
+    """ calculates the wc_final against each po_id 
+        input  - total_vanguard_assets,wc_tot_asset_max,wc_tot_asset
+        output - wc_final
+    """
+         
+    if (total_vanguard_assets >=1000000 ):
+        
+        wc_final = wc_tot_asset_max
+    else:
+        wc_final = wc_tot_asset
+    return wc_final   
+
+def get_wc_mf_final(total_vanguard_assets,wc_assetmix_mutl_fnd_max,wc_assetmix_mutl_fnd):    
+    
+    """ calculates the wc_mf_final against each po_id 
+        input  - total_vanguard_assets,wc_assetmix_mutl_fnd_max,wc_assetmix_mutl_fnd
+        output - wc_mf_final
+    """
+         
+    if (total_vanguard_assets >=1000000 ):
+        
+        wc_mf_final = wc_assetmix_mutl_fnd_max
+    else:
+        wc_mf_final=wc_assetmix_mutl_fnd
+    return wc_mf_final   
+        
+
+def get_sow_overall(total_vanguard_assets,wc_final):    
+    
+    """ calculates the sow_overall against each po_id 
+        input  - total_vanguard_assets,wc_final
+        output - sow_overall
+    """
+    if (wc_final > 0):
+       try: 
+           if (total_vanguard_assets is None):
+               return None
+           if (wc_final is None):
+               return None
+           sow_overall = int(round(((float(total_vanguard_assets)/float(wc_final))*100)))
+       except ZeroDivisionError:
+         sow_overall = 0      
+
+       if (sow_overall > 100):
+           return 100
+       else:
+           return sow_overall 
+    else:
+        return 0
+    
+def get_rem_wall_overall(total_vanguard_assets,wc_final ):    
+    
+    """ calculates rem_wall_overall against each po_id 
+        input  - total_vanguard_assets,wc_final
+        output - rem_wall_overall
+    """
+    if (total_vanguard_assets is None):
+        return None
+    if (wc_final is None):
+        return None     
+    rem_wall_overall = int(round(float(wc_final) - float(total_vanguard_assets)))
+        
+    if (rem_wall_overall < 0) and (rem_wall_overall != None):
+        
+        return 0
+    else:
+        return rem_wall_overall   
+    
+def get_rem_opp_overall(total_vanguard_assets,wc_final):    
+    
+    """ calculates rem_opp_overall against each po_id 
+        input  - total_vanguard_assets,wc_final
+        output - rem_opp_overall
+    """
+    if (total_vanguard_assets is None):
+        return None
+    if (wc_final is None):
+        return None   
+    real_opp_overall= int(round(float(wc_final) * 0.70))
+    rem_opp_overall=int(round (float(real_opp_overall)-float(total_vanguard_assets)))  
+    
+    if (rem_opp_overall < 0) and (rem_opp_overall != None):
+        return 0
+    else:
+        return rem_opp_overall   
+    
+
+def get_sow_mutual_fund(total_mf_etf_assets,wc_mf_final):   
+    
+    """ calculates sow_mutual_fund against each po_id 
+        input  - total_mf_etf_assets,wc_mf_final
+        output - sow_mutual_fund
+    """
+    if (wc_mf_final > 0):  
+        try:
+            if (total_mf_etf_assets is None):
+                return None    
+            sow_mutual_fund = int(round(((float(total_mf_etf_assets)/float(wc_mf_final))*100)))
+        except ZeroDivisionError:
+          sow_mutual_fund = 0
+
+        if (sow_mutual_fund > 100):
+            return 100
+        else:
+            return sow_mutual_fund  
+    else:
+        return 0  
+      
+
+def get_rem_wall_mutual_fund(total_mf_etf_assets,wc_mf_final ):   
+    
+    """ calculates rem_wall_mutual_fund against each po_id 
+        input  - total_mf_etf_assets,wc_mf_final
+        output - rem_wall_mutual_fund
+    """
+    if (total_mf_etf_assets is None):
+        return None
+    if (wc_mf_final is None):
+        return None     
+    rem_wall_mutual_fund = int(round(float(wc_mf_final) - float(total_mf_etf_assets)))
+    
+    if (rem_wall_mutual_fund < 0) and (rem_wall_mutual_fund != None):
+        
+        return 0
+    
+    else:
+        return rem_wall_mutual_fund 
+        
+
+def get_rem_opp_mutual_fund(total_mf_etf_assets ,wc_mf_final):   
+    
+    """ calculates rem_opp_mutual_fund against each po_id 
+        input  - total_mf_etf_assets ,wc_mf_final
+        output - rem_opp_mutual_fund
+    """
+    if (total_mf_etf_assets is None):
+        return None
+    if (wc_mf_final is None):
+        return None     
+    real_opp_mutual_fund = int(round(float(wc_mf_final) * 0.70))
+    rem_opp_mutual_fund= int(round(float(real_opp_mutual_fund) - float(total_mf_etf_assets)))
+    
+    if (rem_opp_mutual_fund < 0) and (rem_opp_mutual_fund != None):
+        
+        return 0
+    
+    else:
+        return rem_opp_mutual_fund 
+         
+    
+if __name__ == "__main__":
+       
+    conf = SparkConf().setAppName(APP_NAME)
+    conf.set( "spark.driver.memory", "10g" )
+    conf.set( "spark.executor.memory", "12g" )
+    conf.set( "spark.yarn.executor.memoryOverhead", "6144" )
+    conf.set( "spark.shuffle.memoryFraction", "0.6" )
+    conf.set( "spark.dynamicAllocation.enabled", "false" )
+    conf.set( "spark.executor.instances", "200" )
+    sc   = SparkContext(conf=conf)
+    import properties_reader
+    properties_dict = properties_reader.get_properties_dict( sys.argv[1:] )
+    sc.addPyFile( properties_dict.get( 'utility_path' ) + 'sparkutils.py' )
+    sc.addPyFile( properties_dict.get( 'utility_path' ) + 'debugutils.py' )
+    sc.addPyFile( properties_dict.get( 'utility_path' ) + 'dateutils.py' )
+    sc.addPyFile( properties_dict.get( 'utility_path' ) + 'rddutils.py' )
+    DEBUG = properties_dict.get( 'debug_flag' )
+    #sc.addPyFile( properties_dict.get( 'python_source_dir' ) + 'clnt_analytics.py' )
+    sc.addPyFile( properties_dict.get( 'python_source_dir' ) + 'wc_join_data.py' )
+    sc.addPyFile( properties_dict.get( 'python_source_dir' ) + 'sow_intermediate_factor.py' )
+    #sc.addPyFile( properties_dict.get( 'python_source_dir' ) + 'lgacy_rtrmt_mf_bal_am.py' )
+    #sc.addPyFile( properties_dict.get( 'python_source_dir' ) + 'lgacy_nonrtrmt_mf_bal_am.py' )
+    #sc.addPyFile( properties_dict.get( 'python_source_dir' ) + 'vba_rtrmt_mf_bal_am.py' )
+    #sc.addPyFile( properties_dict.get( 'python_source_dir' ) + 'vba_nonrtrmt_mf_bal_am.py' )
+    #sc.addPyFile( properties_dict.get( 'python_source_dir' ) + 'lgacy_brkg_lmv_bal_am.py' )
+    #sc.addPyFile( properties_dict.get( 'python_source_dir' ) + 'vba_brkg_lmv_bal_am.py' )
+    #sc.addPyFile( properties_dict.get( 'python_source_dir' ) + 'complex_annuity.py' )
+    #sc.addPyFile( properties_dict.get( 'python_source_dir' ) + 'clnt_sgmnt_cd.py' )
+    #sc.addPyFile( properties_dict.get( 'python_source_dir' ) + 'lgacy_mf_nsbs_bal_am.py' )
+    #sc.addPyFile( properties_dict.get( 'python_source_dir' ) + 'lgacy_mf_sbs_bal_am.py' )
+    #sc.addPyFile( properties_dict.get( 'python_source_dir' ) + 'lgacy_etf_vgi_bal_am.py' )
+    #sc.addPyFile( properties_dict.get( 'python_source_dir' ) + 'lgacy_etf_nvg_bal_am.py' )
+    #sc.addPyFile( properties_dict.get( 'python_source_dir' ) + 'vba_mf_nsbs_bal_am.py' )
+    #sc.addPyFile( properties_dict.get( 'python_source_dir' ) + 'vba_mf_sbs_bal_am.py' )
+    #sc.addPyFile( properties_dict.get( 'python_source_dir' ) + 'vba_etf_vgi_bal_am.py' )
+    #sc.addPyFile( properties_dict.get( 'python_source_dir' ) + 'vba_etf_nvg_bal_am.py' )
+    #sc.addPyFile( properties_dict.get( 'python_source_dir' ) + 'complex_bal_am.py' )
+    import sparkutils
+    sparkutils.addAllPyFiles(sc)
+# Execute the main functionality
+    calculate_share_of_wallet_final = calculate_share_of_wallet( sc, properties_dict )
+    calculate_share_of_wallet_final.rdd.map(sparkutils.to_csv_line).saveAsTextFile( properties_dict.get( 'data_item_dir' ) + "/" + properties_dict.get( 'workflow_id' ) + "/" + "score_sow" )    
+    sc.stop()
+
+
