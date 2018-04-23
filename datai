@@ -1,1 +1,68 @@
 
+Spark is in-memory processing. So spark stores data into their memory. Therefore, it may be need some memory tuning at some times.
+Scenario 1: Type of serialization used:-
+when bytes are large to fit in-memory, causes some low performance.
+Solution: check the data serialization libraries.
+Default it takes java.io.serialization then switch to kyro serialization like as shown below.
+conf.set("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
+
+scenario 2: serialized RDD storage i.e store data in disks:-
+when bytes still too large to fit in-memory. Better use serialized RDD storage. Default it takes cache() data using MEMORY_ONLY level.
+As shown below
+ap_exch_in_amt_df.persist(StorageLevel.MEMORY_ONLY) – when full RDD doesn’t fit, then some partitions will not be cached.so they will calculate once again and causes low performance. (stored RDD as deserialized java object in JVM) 
+ap_exch_in_amt_df.persist(StorageLevel.MEMORY_AND_DISK)  - store partitions which don’t fit in DISK. (stored RDD as deserialized java object in JVM). 
+ap_exch_in_amt_df.persist(StorageLevel.MEMORY_ONLY_SER) -  most efficient but more CPU-intensive to read. (stored RDD as serialized java object in JVM as one byte array per partition).
+ap_exch_in_amt_df.persist(StorageLevel.MEMORY_AND_DISK_SER)  - it spill partitions when data not fit in memory to disk instead of recalculating at each time.
+ap_exch_in_amt_df.persist (StorageLevel.DISK_ONLY) – store the RDD partitions only on DISK.
+MEMORY_ONLY_2, MEMORY_AND_DISK_2 – same as above level, but replicate on two clusters.
+
+Scenario 3: Memory Allocation:-
+check execution and storage memories. Here, execution memory refers computations in shuffles, joins, sorts and aggregations where as storage memory refers caching and spreading (propagating) internal data across the clusters.
+When no execution memory used, storage can takes all available memory and vice versa. Execution may remove storage if necessary. So keep like below as shown below.
+spark.memory.fraction = 0.6 (default) spark.memory.storageFraction = 0.5 (default)
+
+Scenario 4: Memory Consumption:-
+Measuring memory consumption is helps to estimate large RDD sizes. For that create RDD, put it into cache, and look at storage page in sparkUI it tells how much size RDD occupied. Or to estimate memory consumption of particular object use SizeEstimator’s estimate method and this model helps to check space of broadcast variable will occupy on each executor heap.
+sizeEstimator.estimate() with an RDD returns no of objects on the JVM heap.
+
+Scenario 5:
+-	Avoid java features (pointer-based data structures and wrapper objects)
+-	Design data structures to prefer arrays of objects, primitive types instead of java or scala collections (eg: hashmap)
+-	Avoid nested structures with lot small objects and pointers when possible.
+-	Consider numeric IDs or enumeration object instead of strings for keys.
+-	If you have less than 32 GB RAM, then set the JVM flag -XX:+UseCompressedOops to make pointers to be 4 bytes instead of 8 bytes.
+
+Scenario 6: GC
+when you have problem with GC, try use serializing cache than experimenting because GC checks unused java objects for creating room for new ones.
+-	To measure use this verbose:gc -XX:+PrintGCDetails -XX:+PrintGCTimeStamps to the Java options 
+-	Try use -XX:+UseG1GC it helps in some situations where GC is bottlenecked.
+-	Eg; --conf spark.executor.extraJavaOptions=-XX:+UseG1GC
+
+Scenario 7: level of parallelism
+This helps clusters fully utilizations, in general we recommend 2 -3 tasks per CPU core in your cluster.
+To set this: --conf spark.default.parallelism=
+Scenario 8: memory usage of reduce tasks
+We see OutMemoryError not because of RDD’s don’t fit in memory. Not recommend to use groupByKey because it’s too large. Not recommend to use some spark’s shuffle operations like sortByKey, groupByKey, reduceByKey, join etc) because they build hash table within each task, which is often e large.
+
+Performance at spark-submit level:
+Dynamic allocation = TRUE
+1.	Check whether what allocation approach you following i.e prefer dynamic allocation set = TRUE.
+2.	If that is the case check any parallel jobs are running on your cluster, if yes kill unnecessary parallel jobs by using “yarn application –kill application id” from oozie or terminal.
+3.	Because spark may takes maximum resources for some jobs.
+Dynamic allocation = FALSE
+•	Check whether correct number of executors using or not.
+•	Check no of executors is more = decrease executor memory and vice versa.
+•	If you higher Executor.memoryOverhead then lower the  --executor-memory and vice versa because your allocation shouldn’t cross clusters capable limit.
+•	Reasonably increase the driver memory.
+•	Use extraJavaOptions= -XX:+UseG1GC.
+Performance at code level:
+•	Eliminate sub-queries (sub selects).
+•	Try to use joins where sub-queries used.
+•	Persist data-items which are going to use multiple times.
+•	Unpersist no longer used data-items.
+•	Use shared variables concepts if needed.
+•	Eliminate Cartesian lookups and try use joins which suitable for that. 
+
+
+
+
