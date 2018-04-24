@@ -513,3 +513,25 @@ scala> sc.parallelize(Array(1, 2, 3, 4)).foreach(x => accum += x)
 
 scala> accum.value
 res24: Int = 10
+--------------------------------------------------------------------------------------------------------------------------------------
+7. companion object:-
+means class name and object with same name. for example
+//define class
+class Employee(val name:String, var age: Int){
+  override def toString(): String = "Name: %s, Age: %s".format(this.name, this.age)
+}
+//define object
+object Employee{
+  def apply(name: String, age: Int): Employee = new Employee(name, age)
+}
+//create instance without new keyword since it's using companion object
+object CompanionObject extends App{
+  val p1 = Employee("Robin", 25)
+  val p2 = Employee("Lin", 29)
+  println(p1)
+  println(p2)
+}
+output-
+Name: Robin, Age: 25
+Name: Lin, Age: 29
+-------------------------------------------------------------------------------------------------------------------------------------
