@@ -2,3 +2,43 @@ come on
 https://0x0fff.com/spark-architecture/
 
 hello
+object my 
+{
+	private var m:Int=876
+
+	def display()
+	{
+	var o:my=new my
+	println("value is singleton object"+o.d)
+	}
+}
+class my
+{
+	import my._
+	private var d:Int=123
+	def show()
+	{
+	println("value:"+m)
+	}
+}
+object hello
+{
+	def main(args:Array[String])
+	{
+	var ob:my=new my
+	ob.show()
+
+	my.display()
+	}
+}
+
+output:
+value:876
+value is singleton object123
+
+*singleton object are single use class, we cannot create instance of singleton object.
+* At execution time a object will be created with that definition.
+* how to use that properties from outside of that singleton object as my.m
+* create a class same name as singleton object is companion object.
+* so that class can access private variables from singleton object.
+* companion object can access private data member of it's companion class.
