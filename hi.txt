@@ -106,4 +106,58 @@ object my
 notes:
 * multiple classes and multiple traits can be extends
 * we can multiple traits and classes in single class
+* abstract member may not have private variable i.e private var x:Int will not works
 
+important notes:
+how to instantiate
+/*
+var t:three = new three
+    t.func()
+    */
+* Here "t" is variable, instantiated class "three" because we are returning that class information and used "func()" function we are returning that function information.
+
+variables:
+No primitive datatypes, All variables are objects
+Examples: var x:Int = 1 // we can changed this value
+	       Var name:String = “Praveen”
+	       val y:Int = 2 // we can’t change this value
+                var z = 10.2 // type inference(scala figure out data type) 
+class:
+In class we can declare variables and define methods.
+Example-1:
+class student{
+  var name:String = "praveen"
+  var age:Int = 25
+  
+  def show()= {
+   println("Name: "+name)
+   println("Age: "+age)
+ }
+}
+object hello1{
+  def main(args: Array[String]){
+    //here “s” is an object or variable, we created object that object will referred by variable “s”.
+    var s = new student
+    s.show()
+  } 
+}
+
+Example-2: 
+// to create constructor for the class make parameterize class and pass parameters and datatypes
+class student(a:String,b:Int){
+// simply assign object created by these parameters
+  var name:String = a
+  var age:Int = b
+  
+  def show()= {
+   println("Name: "+name)
+   println("Age: "+age)
+ }
+}
+object hello1{
+  def main(args: Array[String]){
+//initialize object here and pass values here
+    var s = new student("praveen",25)
+    s.show()
+  } 
+}
