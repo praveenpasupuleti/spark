@@ -42,3 +42,68 @@ value is singleton object123
 * create a class same name as singleton object is companion object.
 * so that class can access private variables from singleton object.
 * companion object can access private data member of it's companion class.
+
+traits:
+
+trait one
+{
+	def show()
+}
+class two extends one 
+{
+	def show()
+	{
+	println("show function called")
+	}
+}
+object my
+{
+	def main(args: Array[String])
+	{
+
+	var ob:two=new two
+	ob.show()
+	}
+}
+notes:
+*created trait without definition. trait can't be instantiate
+*abstract class can't be instantiate.
+*object can be static
+
+multiple traits:
+
+trait one 
+{
+	var x:Int // abstract field
+	var y:Int = 12 // concrete field
+	
+	def fun()
+}
+trait two
+{
+	def show()
+}
+class three extends one with two
+{
+	var x=12
+	def fun()
+	{
+		println("fun function")
+	}
+	def show()
+	{
+	}
+}
+object my
+{
+	def main(args: Array[String])
+	{
+		var t:three = new three
+		t.fun()
+	}
+}
+
+notes:
+* multiple classes and multiple traits can be extends
+* we can multiple traits and classes in single class
+
