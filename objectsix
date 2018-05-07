@@ -1,0 +1,59 @@
+package com.vanguard.hdm.transaction.tdata_items
+
+object DivisionCode {
+
+  val REPtoPosnServSgmnt = Map("AC" -> "AMSN", "AM" -> "AMSN", "MS" -> "AMSN", "MC" -> "AMSN", "CC" -> "CORE", "CO" -> "CORE", "DF" -> "OT", "FA" -> "FAS", "FC" -> "FLSH", "FL" -> "FLSH", "FP" -> "FLFP", "FW" -> "FLFP", "IG" -> "IIG", "SB" -> "SBS", "VA" -> "VBAS", "VB" -> "VBO", "VC" -> "VOYA", "VS" -> "VOYS", "VW" -> "VOYS", "VY" -> "VOYA", "XX" -> "OT", "Z0" -> "OT").withDefaultValue("0")
+
+  val REPtoMntryDivsn = Map("AC" -> "RETL", "AM" -> "RETL", "MS" -> "RETL", "MC" -> "RETL", "CC" -> "RETL", "CO" -> "RETL", "DF" -> "RETL", "FA" -> "FAS", "FC" -> "RETL", "FL" -> "RETL", "FP" -> "RETL", "FW" -> "RETL", "IG" -> "CIIG", "SB" -> "RETL", "VA" -> "RETL", "VB" -> "OMNI", "VC" -> "RETL", "VS" -> "RETL", "VW" -> "RETL", "VY" -> "RETL", "XX" -> "RETL", "Z0" -> "RETL").withDefaultValue("0")
+
+  
+  def getDivisionCode(masterAcctType: String, masterAcctNo: String, RegstnTypeCode: String): String = {
+    if (masterAcctType == "18") {
+    		return  "COAS"
+    }
+    
+    if (isVista(masterAcctType, masterAcctNo, RegstnTypeCode)) {
+    		return "OMNI"
+    } 
+    
+    if( masterAcctType == "26" || masterAcctType == "96") {
+    		return  "COAS"
+    } 
+    
+    return "RETL" 
+  }
+ 
+  def checkNumberValue(masterAcctNo : String): Boolean = {
+    if(masterAcctNo.matches("[0-9]+")){
+      return true
+    }
+     return false
+  }
+
+  def isVista(masterAcctType: String, masterAcctNo: String, RegstnTypeCode: String): Boolean = {
+    if (masterAcctNo != null && masterAcctNo != ' ') {
+      if (checkNumberValue(masterAcctNo)) {
+        val masterAcctValue = masterAcctNo.toInt
+        if ((masterAcctValue >= 90000 && masterAcctValue <= 99999)
+          || (masterAcctType == "11")
+          || (RegstnTypeCode == "99")) {
+          return true
+        }
+      }
+    }
+    return false
+  }
+
+  def getDivisionCodeVBA_PosnServSgmntCD(REP_CD: String): String = {
+    if (REP_CD.length() > 1) {
+    	return REPtoPosnServSgmnt(REP_CD.substring(0,2).trim())
+    } else return "0"
+  }
+
+  def getDivisionCodeVBA_MntryDivsnCD(REP_CD: String): String = {
+    if (REP_CD.length() > 1) {
+      return REPtoMntryDivsn(REP_CD.substring(0,2).trim())
+    } else return "0"
+  }
+ 
+}
