@@ -1,0 +1,242 @@
+package com.vanguard.hdm.transaction.tdata_items
+
+import com.vanguard.hdm.cmn.utilities.PropertiesReader
+import com.vanguard.hdm.cmn.utilities.DateUtility
+import org.apache.spark.SparkConf
+import org.apache.spark.SparkContext
+import org.apache.spark.sql.{ Row, DataFrame }
+import org.apache.spark.sql.functions.{ udf, trim }
+import java.util.Properties
+import org.apache.spark.sql.SQLContext
+import org.apache.spark.storage.StorageLevel
+import org.apache.spark.sql.SparkSession
+
+object DivisionCode_TA {
+
+  private var DEBUG: Boolean = false
+
+  def main(args: Array[String]): Unit = {
+    if (args.length < 1) {
+      System.err.println("Missing properties file")
+      System.exit(1)
+    }
+
+    val APP_NAME = getAppName()
+
+    val spark = SparkSession
+      .builder()
+      .enableHiveSupport()
+      .appName(APP_NAME)
+      .config("spark.sql.parquet.writeLegacyFormat", "true")
+      .getOrCreate()
+
+    val properties_dict = PropertiesReader.get_properties_dict(args(0), args)
+
+    calculate_final_TA_df_and_saveAsFile(spark, properties_dict)
+
+    spark.stop()
+  }
+
+  def calculate_final_TA_df_and_saveAsFile(spark: SparkSession,
+    properties_dict: Properties) = {
+
+    var final_df = calculate_TA_division_code_df(spark, properties_dict)
+    final_df.persist(StorageLevel.DISK_ONLY)
+    final_df = final_df.dropDuplicates()
+    println("WRITING FILES!")
+    writeFiles(spark, final_df, properties_dict)
+    
+    final_df.unpersist()
+  }
+
+  def calculate_TA_division_code_df(spark: SparkSession,
+    properties_dict: Properties): DataFrame = {
+
+    val TA_position_service_segment_df = calculate_postn_service_seg(spark, properties_dict)
+    TA_position_service_segment_df.persist(StorageLevel.DISK_ONLY)
+
+    TA_position_service_segment_df.registerTempTable("TA_position_service_segment_table")
+
+    spark.udf.register("getPostnSegOnVoy", PostnServiceSegment.getPostnSegOnVoy _)
+
+    val TA_division_code_final_query = "select a.po_id, a.acct_id, a.acct_posn_id, a.vast_acct_no, a.port_id, a.division_code as mntry_divsn_cd , " +
+      "getPostnSegOnVoy(a.postn_serv_code, b.critr_grp_id) as posn_serv_sgmnt_cd, a.efftv_bgn_dt, a.efftv_end_dt " +
+      "from TA_position_service_segment_table a left outer join " + properties_dict.getProperty("tcritr_clnt_grp_tableName") +
+      " b on a.clnt_gr_id = b.clnt_gr_id"
+
+    val TA_division_code_final = spark.sql(TA_division_code_final_query)
+    TA_division_code_final.persist(StorageLevel.DISK_ONLY)
+    println("TA DIVISION CODE: " + TA_division_code_final_query)
+    if (DEBUG) {
+      println(TA_division_code_final_query)
+      TA_division_code_final.show()
+    }
+
+    return TA_division_code_final
+
+  }
+
+  def calculate_postn_service_seg(spark: SparkSession, properties_dict: Properties): DataFrame = {
+
+    val TA_mont_division_code_df = calculate_TA_division_code(spark, properties_dict)
+    TA_mont_division_code_df.persist(StorageLevel.DISK_ONLY)
+    TA_mont_division_code_df.registerTempTable("TA_mont_division_code_table")
+
+    spark.udf.register("getPostnServiceSeg", PostnServiceSegment.getPostnServiceSeg _)
+
+    val TA_position_service_segment_query = "select acct_id, acct_posn_id, vast_acct_no, port_id, po_id, clnt_gr_id, division_code, " +
+      "getPostnServiceSeg(mstr_acct_typ_cd, vast_mstr_acct_no, rtrmt_pln_typ_cd, " +
+      "division_code, rgstrn_typ_cd, sub_rgstrn_typ_cd) as postn_serv_code, efftv_bgn_dt, efftv_end_dt " +
+      "from TA_mont_division_code_table"
+
+    val TA_position_service_segment_df = spark.sql(TA_position_service_segment_query)
+    TA_mont_division_code_df.unpersist()
+    TA_position_service_segment_df.persist(StorageLevel.DISK_ONLY)
+
+    TA_position_service_segment_df.registerTempTable("position_service_segment")
+    properties_dict.setProperty("position_service_segment_tableName", "position_service_segment")
+    
+    val TA_position_service_segment_SBS_filtered_df = FilterSBS.Filter_DivisionTA_through_SBSclients(spark, properties_dict)
+    TA_position_service_segment_SBS_filtered_df.persist()
+    TA_position_service_segment_SBS_filtered_df.persist(StorageLevel.DISK_ONLY)
+    TA_position_service_segment_df.unpersist()
+    println("POSN SERVICE SEGMENT " + TA_position_service_segment_query)
+    if (DEBUG) {
+      println(TA_position_service_segment_query)
+      TA_position_service_segment_SBS_filtered_df.show()
+    }
+
+    return TA_position_service_segment_SBS_filtered_df
+
+  }
+  def calculate_TA_division_code(spark: SparkSession, properties_dict: Properties): DataFrame = {
+
+    val retirement_code_TA_df = calculate_rtrmt_TA_joined_df(spark: SparkSession, properties_dict: Properties)
+    retirement_code_TA_df.persist(StorageLevel.DISK_ONLY)
+    retirement_code_TA_df.registerTempTable("retirement_code_TA_table")
+
+    val client_account_details_df = calculate_client_account_details_df(spark, properties_dict)
+    client_account_details_df.registerTempTable("client_account_details_table")
+    client_account_details_df.persist(StorageLevel.DISK_ONLY)
+    spark.udf.register("getDivisionCode", DivisionCode.getDivisionCode _)
+
+    val TA_mont_division_code_query = "select a.acct_id, a.acct_posn_id, a.vast_acct_no, a.port_id, a.po_id, b.mstr_acct_typ_cd, b.vast_mstr_acct_no, " +
+      "a.rtrmt_pln_typ_cd, b.clnt_gr_id, a.rgstrn_typ_cd, a.sub_rgstrn_typ_cd, " +
+      "getDivisionCode(b.mstr_acct_typ_cd, b.vast_mstr_acct_no, a.rtrmt_pln_typ_cd) as division_code, " +
+      "a.efftv_bgn_dt, a.efftv_end_dt " +
+      "from retirement_code_TA_table a left outer join client_account_details_table b " +
+      "on a.po_id = b.vgi_clnt_id"
+
+    val TA_mont_division_code_df = spark.sql(TA_mont_division_code_query)
+    retirement_code_TA_df.unpersist()
+    client_account_details_df.unpersist()
+    TA_mont_division_code_df.persist(StorageLevel.DISK_ONLY)
+
+    println("MONT DIVISION CODE: " + TA_mont_division_code_query)
+    if (DEBUG) {
+
+      TA_mont_division_code_df.show()
+    }
+
+    return TA_mont_division_code_df
+  }
+
+  def calculate_rtrmt_TA_joined_df(spark: SparkSession, properties_dict: Properties): DataFrame = {
+
+    val retirement_plan_code_df = calculate_retirement_plan_df(spark, properties_dict)
+    retirement_plan_code_df.persist(StorageLevel.DISK_ONLY)
+    retirement_plan_code_df.registerTempTable("retirement_plan_code_table")
+    
+    val tA_position_common_df = CommonDfsUtility.calculate_TA_position_common_df(spark, properties_dict)
+    tA_position_common_df.persist(StorageLevel.DISK_ONLY)
+    tA_position_common_df.registerTempTable("tA_position_common_table_ta")
+
+    val final_retirement_code_query = "select a.po_id, a.rtrmt_pln_typ_cd, b.acct_id, b.acct_posn_id, b.vast_acct_no , b.port_id, a.rgstrn_typ_cd, a.sub_rgstrn_typ_cd, b.efftv_bgn_dt, b.efftv_end_dt from " +
+      "retirement_plan_code_table a inner join " +
+      "tA_position_common_table_ta b on a.rlshp_id = b.acct_id "
+
+    val final_retirement_code_df = spark.sql(final_retirement_code_query)
+    retirement_plan_code_df.unpersist()
+    tA_position_common_df.unpersist()
+    final_retirement_code_df.persist(StorageLevel.DISK_ONLY)
+
+    println("FINAL RETIREMENT PLAN: " + final_retirement_code_query)
+    if (DEBUG) {
+      println(final_retirement_code_query)
+      final_retirement_code_df.show()
+    }
+    spark.sql("DROP TABLE tA_position_common_table_ta")
+    return final_retirement_code_df
+  }
+
+  def calculate_retirement_plan_df(spark: SparkSession, properties_dict: Properties): DataFrame = {
+    val codeSqlString = getRetirementTypeCodeSql(properties_dict)
+    val retirement_plan_code_df = spark.sql(codeSqlString)
+    
+    println("RETIREMENT PLAN " + codeSqlString)
+    if (DEBUG) {
+      
+      retirement_plan_code_df.show()
+    }
+    
+    return retirement_plan_code_df
+  }
+
+  def calculate_client_account_details_df(spark: SparkSession, properties_dict: Properties): DataFrame = {
+    val detailsSqlString = getClientAccountDetailsSQL(properties_dict)
+
+    val client_account_details_df = spark.sql(detailsSqlString)
+
+    println("CLIENT ACCOUNT DETAILS " + detailsSqlString)
+    if (DEBUG) {
+      println(detailsSqlString)
+      client_account_details_df.show()
+    }
+    return client_account_details_df
+  }
+
+  def getClientAccountDetailsSQL(properties_dict: Properties): String = {
+
+    val tcin0330_tableName = properties_dict.getProperty("tcin0330_tableName")
+    val tcin0310_tableName = properties_dict.getProperty("tcin0310_tableName")
+    val tcin0680_tableName = properties_dict.getProperty("tcin0680_tableName")
+
+    val sqlString = "select i.vgi_clnt_id, g.mstr_acct_typ_cd, g.vast_mstr_acct_no, i.clnt_gr_id, i.sgmntn_typ_cd from " +
+      tcin0310_tableName + " g, (select distinct e.vgi_clnt_id , z.sgmntn_typ_cd, max(x.clnt_gr_id) as clnt_gr_id from " +
+      tcin0330_tableName + " x, " + tcin0310_tableName + " y, " + tcin0680_tableName + " z, " +
+      "(select distinct a.vgi_clnt_id as vgi_clnt_id, min(c.sgmnt_rnk_no) as rnk from " + tcin0330_tableName + " a, " +
+      tcin0310_tableName + " b, " + tcin0680_tableName + " c " + "where a.clnt_gr_id = b.clnt_gr_id and " +
+      "trim(b.clnt_gr_typ_cd) = 'CG' and b.sgmntn_typ_cd = c.sgmntn_typ_cd group by a.vgi_clnt_id) e where x.vgi_clnt_id = e.vgi_clnt_id " +
+      "and x.clnt_gr_id = y.clnt_gr_id and z.sgmntn_typ_cd = y.sgmntn_typ_cd and z.sgmnt_rnk_no = e.rnk " +
+      "group by e.vgi_clnt_id, z.sgmntn_typ_cd) i where g.clnt_gr_id = i.clnt_gr_id"
+
+    return sqlString
+  }
+
+  def getRetirementTypeCodeSql(properties_dict: Properties): String = {
+
+    val pastTwoYearsDate = DateUtility.getPastDate(2)
+
+    val sqlString = "select distinct c.po_id, e.rtrmt_pln_typ_cd, a.rlshp_id, d.rgstrn_typ_cd, d.sub_rgstrn_typ_cd from " + properties_dict.getProperty("tsag_acct_rlshp_tableName") +
+      " a, " + properties_dict.getProperty("vsag_viewName") + " b, " + properties_dict.getProperty("vsag_bus_rlshp_viewName") +
+      " c, " + properties_dict.getProperty("tagrmt_rgstrn_tableName") + " d, " + properties_dict.getProperty("tacct_tableName") +
+      " e where trim(a.rlshp_typ_cd) = 'ACCT' and b.sag_id = a.sag_id and b.serv_id in (8,38) " +
+      "and c.sag_id = b.sag_id and trim(c.po_role_cd) in ('PRRT','OW','POWN') and d.sag_id = c.sag_id and d.rgstrn_typ_cd " +
+      "not in ('97', '98', '99') and e.acct_id = a.rlshp_id and trim(e.sub_typ) = 'MUTL' and from_unixtime(unix_timestamp(b.efftv_end_dt, 'yyyy-MM-dd'), 'yyyy-MM-dd') > '" + pastTwoYearsDate +
+      "' and from_unixtime(unix_timestamp(c.efftv_end_dt, 'yyyy-MM-dd'), 'yyyy-MM-dd') > '" + pastTwoYearsDate + "' group by c.po_id ,e.rtrmt_pln_typ_cd, a.rlshp_id, d.rgstrn_typ_cd, d.sub_rgstrn_typ_cd"
+
+    return sqlString
+  }
+
+  def getAppName(): String = {
+    return "Division Code - TA scala application"
+  }
+
+  def writeFiles(spark: SparkSession, taDivisionDf: DataFrame, properties_dict: Properties) = {
+    val sqlContext = spark.sqlContext
+    import sqlContext.implicits._
+    taDivisionDf.map(_.mkString(",")).rdd.saveAsTextFile(properties_dict.getProperty("data_item_dir") +
+      "/" + properties_dict.getProperty("workflow_id") + "/" + "division_ta")
+  }
+
+}
