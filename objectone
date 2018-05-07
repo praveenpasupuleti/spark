@@ -1,0 +1,136 @@
+package com.vanguard.hdm.transaction.tdata_items
+
+import com.vanguard.hdm.cmn.utilities.PropertiesReader
+import com.vanguard.hdm.cmn.utilities.DateUtility
+import org.apache.spark.SparkConf
+import org.apache.spark.SparkContext
+import org.apache.spark.sql.{ Row, DataFrame }
+import org.apache.spark.sql.functions.{ udf, trim }
+import java.util.Properties
+import org.apache.spark.sql.SQLContext
+import org.apache.spark.storage.StorageLevel
+import org.apache.spark.sql.SparkSession
+
+object FilterSBS {
+
+  private var DEBUG: Boolean = true
+
+  def main(args: Array[String]): Unit = {
+
+    if (args.length < 1) {
+      System.err.println("Missing properties file")
+      System.exit(1)
+    }
+
+    val APP_NAME = getAppName()
+
+    val spark = SparkSession
+      .builder()
+      .enableHiveSupport()
+      .appName(APP_NAME)
+      .config("spark.sql.parquet.writeLegacyFormat", "true")
+      .getOrCreate()
+
+    val properties_dict = PropertiesReader.get_properties_dict(args(0), args)
+
+    determine_final_SBS_df_and_saveAsFile(spark, properties_dict)
+
+    spark.stop()
+  }
+
+  def determine_final_SBS_df_and_saveAsFile(spark: SparkSession, properties_dict: Properties) = {
+    DEBUG = properties_dict.get("debug_flag").toString().toBoolean
+
+    val sbs_clients_df = get_SBS_clients(spark, properties_dict)
+    val filtered_sbs_clients = filter_SBS_clients(spark, properties_dict)
+    filtered_sbs_clients.persist(StorageLevel.DISK_ONLY)
+    
+    sbs_clients_df.unpersist()
+
+    writeFiles(spark, filtered_sbs_clients, properties_dict)
+
+    filtered_sbs_clients.unpersist()
+  }
+
+  def Filter_DivisionTA_through_SBSclients(spark: SparkSession, properties_dict: Properties): DataFrame = {
+    val sbs_clients_df = get_SBS_clients(spark, properties_dict)
+    val filtered_sbs_clients = filter_SBS_clients(spark, properties_dict)
+    filtered_sbs_clients.persist(StorageLevel.DISK_ONLY)
+    sbs_clients_df.unpersist()
+
+    return filtered_sbs_clients
+}
+  
+  def get_SBS_clients(spark: SparkSession, properties_dict: Properties): DataFrame = {
+
+    val SBS_clients_query = get_SBS_clients_sql(properties_dict)
+    var SBS_clients_df = spark.sql(SBS_clients_query)
+    SBS_clients_df.persist(StorageLevel.DISK_ONLY)
+    SBS_clients_df = SBS_clients_df.dropDuplicates()
+    SBS_clients_df.registerTempTable("sbs_clients")
+
+    if (DEBUG) {
+      println(SBS_clients_query)
+      SBS_clients_df.show()
+    }
+
+    return SBS_clients_df
+  }
+
+  def filter_SBS_clients(spark: SparkSession, properties_dict: Properties): DataFrame = {
+    val SBS_filter_sql_query = get_SBS_filter_sql(properties_dict)
+    
+    var Position_service_segment_SBS_filtered_df = spark.sql(SBS_filter_sql_query)
+
+    if (DEBUG) {
+      Position_service_segment_SBS_filtered_df.show()
+    }
+
+    Position_service_segment_SBS_filtered_df = Position_service_segment_SBS_filtered_df.dropDuplicates()
+    return Position_service_segment_SBS_filtered_df
+  }
+
+  def get_SBS_filter_sql(properties_dict: Properties): String = {
+    val position_service_segment_tableName = properties_dict.getProperty("position_service_segment_tableName")
+
+    val sqlString = s"""SELECT A.acct_id AS acct_id, 
+                                A.acct_posn_id AS acct_posn_id, 
+                                A.vast_acct_no AS vast_acct_no, 
+                                A.port_id AS port_id, 
+                                A.po_id AS po_id, 
+                                A.clnt_gr_id AS clnt_gr_id, 
+                                A.division_code AS division_code, 
+                                (CASE
+                                    WHEN trim(B.acct_posn_id) IS NOT NULL THEN "SBS" 
+                                    ELSE A.postn_serv_code
+                                END) AS postn_serv_code,
+                                A.efftv_bgn_dt AS efftv_bgn_dt,
+                                A.efftv_end_dt AS efftv_end_dt
+                        FROM $position_service_segment_tableName A  
+                           LEFT OUTER JOIN sbs_clients B 
+                                ON A.ACCT_POSN_ID = B.ACCT_POSN_ID"""
+    return sqlString
+  }
+
+  def get_SBS_clients_sql(properties_dict: Properties): String = {
+    val tmutl_fnd_posn_tableName = properties_dict.getProperty("tmutl_fnd_posn_tableName")
+    val tsbs_prtcpnt_alocn_tableName = properties_dict.getProperty("tsbs_prtcpnt_alocn_tableName")
+
+    val sqlString = s"""SELECT A.VAST_ACCT_NO, A.PORT_ID, B.ACCT_POSN_ID, B.PO_ID, A.ACCT_ID
+                        FROM $tmutl_fnd_posn_tableName A, $tsbs_prtcpnt_alocn_tableName B
+                        WHERE A.ACCT_POSN_ID = B.ACCT_POSN_ID"""
+    return sqlString
+  }
+
+  def getAppName(): String = {
+    return "Service Segment - SBS Filter Application"
+  }
+
+  def writeFiles(spark: SparkSession, taDivisionDf: DataFrame, properties_dict: Properties) = {
+    val sqlContext = spark.sqlContext
+    import sqlContext.implicits._
+    taDivisionDf.map(_.mkString(",")).rdd.saveAsTextFile(properties_dict.getProperty("data_item_dir") +
+      "/" + properties_dict.getProperty("workflow_id") + "/" + "filter_sbs")
+  }
+  
+}
