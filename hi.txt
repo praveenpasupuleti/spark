@@ -42,7 +42,7 @@ value is singleton object123
 * create a class same name as singleton object is companion object.
 * so that class can access private variables from singleton object.
 * companion object can access private data member of it's companion class.
-
+------------------------------------------------------------------------------------------------------------------------------
 traits:
 
 trait one
@@ -69,7 +69,7 @@ notes:
 *created trait without definition. trait can't be instantiate
 *abstract class can't be instantiate.
 *object can be static
-
+---------------------------------------------------------------------------------------------------------------------------
 multiple traits:
 
 trait one 
@@ -115,13 +115,14 @@ var t:three = new three
     t.func()
     */
 * Here "t" is variable, instantiated class "three" because we are returning that class information and used "func()" function we are returning that function information.
-
+-------------------------------------------------------------------------------------------------------------------------------
 variables:
 No primitive datatypes, All variables are objects
 Examples: var x:Int = 1 // we can changed this value
 	       Var name:String = “Praveen”
 	       val y:Int = 2 // we can’t change this value
                 var z = 10.2 // type inference(scala figure out data type) 
+-------------------------------------------------------------------------------------------------------------------------------		
 class:
 In class we can declare variables and define methods.
 Example-1:
@@ -161,3 +162,110 @@ object hello1{
     s.show()
   } 
 }
+-----------------------------------------------------------------------------------------------------------------------------------
+How to create multiple constructors in a single class:
+class account(ac_id:Int, name:String, balance:Double){
+  //if programmer not specifying balance
+  def this(a:Int,n:String){
+   //call primary constructor
+    this(a,n,0)
+  }
+  def this(a:Int){
+  this(a,"",0)
+}
+  def this(){
+    this(0,"",0)
+  }
+  // to return some outputs need this function
+  def show(){
+    println("Name: "+name)
+    println("Act_id: "+ac_id)
+    println("Bal: "+balance)
+  }
+}
+object multiple_constructors {
+  def main(args: Array[String]){
+    var a=new account(12,"john",10000)
+    // to display output from above function need show()
+    a.show()
+    var b=new account(13,"carls")
+    b.show()
+    var c=new account(14)
+    c.show()
+  }
+  }
+---------------------------------------------------------------------------------------------------------------------------------
+Default arguments:
+object default_arguments {  
+  def main(args: Array[String]){
+    fun("First", "Second")
+    fun("John") 
+  }
+  def fun(one:String="UnKnown", two:String="UnKnown"){
+    println(one+"  "+two)
+  }
+}
+
+Note:
+•	default arguments are arguments with default values, that values will be used when ever that function called without specific arguments.
+•	You can’t change the order of that arguments.
+----------------------------------------------------------------------------------------------------------------------------------
+Named Arguments:
+object namedArguments {
+  def main(args: Array[String]){
+// you can pass arguments by specifying name as well
+   printName(fName="praveen",lName="pasupuleti")
+// you can change order of these arguments.
+   printName(lName="pasupuleti",fName="praveen")
+    }
+   def printName(fName:String, lName:String){
+     println("Name: "+fName+ " "+lName)   
+  } 
+}
+-----------------------------------------------------------------------------------------------------------------------------------
+Arrays:
+object array {
+  def main(args: Array[String]){
+    //var {arrayname}:{arraydatatype}=new{arraydatatype}(allocatespace)
+    var myarray:Array[Int]=new Array[Int](3)
+    //assign values
+    myarray(0)=12
+    myarray(1)=13
+    myarray(2)=14
+    /*
+    for (i <-0 to 2)
+    {
+      println(myarray(i))
+    }*/
+    for (i <- myarray){
+      println(i)
+    }
+  }
+}
+------------------------------------------------------------------------------------------------------------------------------------
+// multiDimensional Array
+object array {
+  def main(args: Array[String]){
+     // if you want to store matrix we go with these multiDimensional array
+    var darray=Array.ofDim[Int](2,2)
+    //store values into this Array
+    darray(0)(0)=12
+    darray(0)(1)=13
+    darray(1)(0)=14
+    darray(1)(1)=15
+    
+    var i:Int=0
+    var j:Int=0
+    
+    while(i<2){
+      while(j<2)
+        println(darray(i)(j))
+    }
+    /*
+    for (i <-0 to 1; j <-0 to 1){
+      println(darray(i)(j))
+    }
+    */ 
+  }
+}
+-------------------------------------------------------------------------------------------------------------------------------
