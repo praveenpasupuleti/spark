@@ -1,0 +1,110 @@
+package com.vanguard.hdm.transaction.tdata_items
+
+import java.util.Properties
+
+import org.apache.spark.SparkConf
+import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.functions.udf
+import org.apache.spark.sql.functions.trim
+import org.apache.spark.SparkContext
+import org.apache.spark.sql.DataFrame
+import org.apache.spark.sql.Row
+import org.apache.spark.sql.types.DecimalType
+import org.apache.spark.sql.types.IntegerType
+import org.apache.spark.sql.types.StringType
+import org.apache.spark.sql.types.StructField
+import org.apache.spark.sql.types.StructType
+import org.apache.spark.storage.StorageLevel
+
+import com.vanguard.hdm.cmn.utilities.PropertiesReader
+import org.apache.spark.sql.SQLContext
+import org.apache.spark.sql.types.TimestampType
+import java.text.SimpleDateFormat
+import java.sql.Timestamp
+
+object DivisionCode_BRKG_Driver {
+
+  private var DEBUG: Boolean = false
+  val workflow_id = "DivisionCode_BRKG"
+
+  def main(args: Array[String]): Unit = {
+
+    if (args.length < 1) {
+      System.err.println("Missing properties file")
+      System.exit(1)
+    }
+
+    val APP_NAME = getAppName()
+
+    val spark = SparkSession
+      .builder()
+      .enableHiveSupport()
+      .appName(APP_NAME)
+      .config("spark.sql.parquet.writeLegacyFormat", "true")
+      .getOrCreate()
+
+    val properties_dict = PropertiesReader.get_properties_dict(args(0), args)
+    properties_dict.setProperty("workflow_id", workflow_id)
+
+    val finalDataFrame = calculate_combined_BRKG_df(spark, properties_dict)
+    finalDataFrame.persist(StorageLevel.DISK_ONLY)
+    writeFiles(finalDataFrame, properties_dict);
+    finalDataFrame.unpersist()
+    spark.stop()
+  }
+
+  def calculate_combined_BRKG_df(spark: SparkSession,
+    properties_dict: Properties): DataFrame = {
+
+    DEBUG = properties_dict.getProperty("debug_flag").toString().toBoolean
+
+    DivisionCode_VBA.calculate_vba_division_and_saveAsFile(spark, properties_dict)
+    DivisionCode_VBO.calculate_vbo_division_and_saveAsFile(spark, properties_dict)
+    DivisionCode_VBS.calculate_vbs_division_and_saveAsFile(spark, properties_dict)
+
+    return collect_total_data_and_convert_df(spark, properties_dict)
+  }
+
+  def collect_total_data_and_convert_df(spark: SparkSession, properties_dict: Properties): DataFrame = {
+    val workflow_id = properties_dict.getProperty("workflow_id")
+    val data_item_dir = properties_dict.getProperty("data_item_dir")
+    val schema = StructType(Array(
+      StructField("po_id", IntegerType, true),
+      StructField("acct_id", DecimalType(15, 0), true),
+      StructField("acct_posn_id", DecimalType(15, 0), true),
+      StructField("posn_serv_sgmnt_cd", StringType, true),
+      StructField("mntry_divsn_cd", StringType, true),
+      StructField("efftv_bgn_dt", TimestampType, true),
+      StructField("efftv_end_dt", TimestampType, true)))
+
+    val sc = spark.sparkContext
+    val BRKG_data = sc.textFile(s"/user/hadoop/${data_item_dir}/${workflow_id}/division_vba").
+      union(sc.textFile(s"/user/hadoop/${data_item_dir}/${workflow_id}/division_vbo")).
+      union(sc.textFile(s"/user/hadoop/${data_item_dir}/${workflow_id}/division_vbs")).
+      map(x => x.split(",")).map(x => Row(Integer.valueOf(x(0)), BigDecimal(x(1)), BigDecimal(x(2)), x(3).trim(), x(4).trim(), createTimeStamp(x(5)), createTimeStamp(x(6))))
+
+    val sqlContext = spark.sqlContext
+    import sqlContext.implicits._
+    var final_BRKG_df = sqlContext.createDataFrame(BRKG_data, schema)
+    final_BRKG_df = final_BRKG_df.dropDuplicates()
+    return final_BRKG_df
+
+  }
+
+  def createTimeStamp(time:String): Timestamp = {
+    val sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss")
+    val date = sdf.parse(time)
+    val timeStamp = new Timestamp(date.getTime())
+    return timeStamp
+  }
+  
+  def writeFiles(finalDF: DataFrame, properties_dict: Properties) = {
+    finalDF.coalesce(4)
+    finalDF.write.parquet(properties_dict.getProperty("data_item_dir") + "/" + properties_dict.getProperty("workflow_id") + "/" + "division_brkg")
+  }
+
+  def getAppName(): String = {
+    return "Combined Division Code - VBS & VBA & VBO scala application"
+  }
+
+}
