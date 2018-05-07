@@ -1,0 +1,98 @@
+package com.vanguard.hdm.transaction.tdata_items
+
+import com.vanguard.hdm.cmn.utilities.PropertiesReader
+import org.apache.spark.SparkContext
+import org.apache.spark.SparkConf
+import org.apache.spark.sql.{ Row, DataFrame }
+import org.apache.spark.sql.functions.{ udf, trim }
+import java.util.Properties
+import org.apache.spark.sql.DataFrame
+import com.vanguard.hdm.cmn.utilities.DateUtility
+import org.apache.spark.sql.SQLContext
+import org.apache.spark.storage.StorageLevel
+import org.apache.spark.sql.SparkSession
+
+/*
+ ****************************************************************************
+ * Module Description: The VBADivision module will calculate the following parameters: acct_id, acct_posn_id, PosnServSegmntCD, and MntryDivsnCD
+ * 
+ * This module has the following function(s) - 
+ * main: Sets app name, sparkContext, and properties_dict
+ * calculate_VBADivision: Sets hiveContext, and executes SQL to calculate the PosnServSgmntCD and MntryDivsnCD per acct_id
+ * writeFiles: Writes out the final DataFrame results as a textFile
+ * getSQL_tacct_brkg: Returns SQL to grab the acct_id and rep_cd from tacct_brkg table
+ * getAppName: Gets the Application Name
+ ****************************************************************************
+ */
+
+object DivisionCode_VBA {
+
+  private var DEBUG: Boolean = false
+
+  def main(args: Array[String]) {
+    if (args.length < 1) {
+      System.err.println("Missing properties file")
+      System.exit(1)
+    }
+
+    val APP_NAME = getAppName()
+
+    val spark = SparkSession
+      .builder()
+      .enableHiveSupport()
+      .appName(APP_NAME)
+      .config("spark.sql.parquet.writeLegacyFormat", "true")
+      .getOrCreate()
+
+    val properties_dict = PropertiesReader.get_properties_dict(args(0), args)
+
+    calculate_vba_division_and_saveAsFile(spark, properties_dict)
+
+    spark.stop()
+  }
+
+  def calculate_vba_division_and_saveAsFile(spark: SparkSession, properties_dict: Properties) = {
+
+    DEBUG = properties_dict.getProperty("debug_flag").toString().toBoolean
+
+    val final_df = calculate_vba_division_code(spark, properties_dict)
+    final_df.persist(StorageLevel.DISK_ONLY)
+    writeFiles(spark, final_df, properties_dict)
+    final_df.unpersist()
+  }
+
+  def calculate_vba_division_code(spark: SparkSession, properties_dict: Properties): DataFrame = {
+    val previousTwoYearsDate = DateUtility.getPastDate(2)
+    val division_repcode_df = CommonDfsUtility.calculate_divisionCode_on_repCode(spark, properties_dict)
+    division_repcode_df.persist(StorageLevel.DISK_ONLY)
+    division_repcode_df.registerTempTable("division_table_vba")
+
+    val vba_division_poid_query = "select distinct v.po_id, s.acct_id, s.acct_posn_id, s.posn_serv_sgmnt_cd , s.mntry_divsn_cd, s.efftv_bgn_dt, s.efftv_end_dt from " +
+      properties_dict.getProperty("tsag_acct_rlshp_tableName") + " t," + properties_dict.getProperty("vsag_viewName") +
+      " u," + properties_dict.getProperty("vsag_bus_rlshp_viewName") + " v,  division_table_vba s " +
+      "where trim(t.rlshp_typ_cd) = 'ACCT' and u.sag_id = t.sag_id " +
+      "and u.serv_id = 90 and from_unixtime(unix_timestamp(u.efftv_end_dt, 'yyyy-MM-dd'), 'yyyy-MM-dd') > '" + previousTwoYearsDate + "' and v.sag_id = u.sag_id and trim(v.po_role_cd) = 'PRRT' " +
+      "and from_unixtime(unix_timestamp(v.efftv_end_dt, 'yyyy-MM-dd'), 'yyyy-MM-dd') > '" + previousTwoYearsDate + "' and s.acct_id = t.rlshp_id"
+
+    println(vba_division_poid_query)
+
+    val vba_division_poid_df = spark.sql(vba_division_poid_query)
+    division_repcode_df.unpersist()
+
+    if (DEBUG) {
+      vba_division_poid_df.show()
+    }
+
+    return vba_division_poid_df
+  }
+
+  def writeFiles(spark: SparkSession, finalDF: DataFrame, properties_dict: Properties) = {
+    val sqlContext = spark.sqlContext
+    import sqlContext.implicits._
+    finalDF.map(_.mkString(",")).rdd.saveAsTextFile(properties_dict.getProperty("data_item_dir") + "/" + properties_dict.getProperty("workflow_id") + "/" + "division_vba")
+  }
+
+  def getAppName(): String = {
+    return "Division Code - VBA scala application"
+  }
+}
