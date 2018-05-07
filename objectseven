@@ -1,0 +1,97 @@
+package com.vanguard.hdm.transaction.tdata_items
+
+import com.vanguard.hdm.cmn.utilities.PropertiesReader
+import com.vanguard.hdm.cmn.utilities.DateUtility
+import org.apache.spark.sql.functions.udf
+import org.apache.spark.SparkConf
+import org.apache.spark.SparkContext
+import org.apache.spark.sql.Row
+import java.util.Properties
+import org.apache.spark.sql.DataFrame
+import org.apache.spark.sql.hive.HiveContext
+import org.apache.spark.sql.SparkSession
+import java.text.SimpleDateFormat
+
+object CommonDfsUtility {
+   
+  def calculate_TA_position_common_df(spark: SparkSession, properties_dict: Properties): DataFrame = {
+    val taSqlString = getTASql(properties_dict)
+    val tA_position_common_df = spark.sql(taSqlString)
+    
+    val DEBUG = properties_dict.get("debug_flag").toString().toBoolean
+     
+    if (DEBUG) {
+    	 println(taSqlString)
+    	 tA_position_common_df.show()
+    }
+    
+    return tA_position_common_df
+  }
+  
+  def calculate_VBS_position_common_df(spark: SparkSession, properties_dict: Properties): DataFrame = {
+
+    val vbaSqlString = getVBSSql(properties_dict)
+    val vba_position_common_df = spark.sql(vbaSqlString)
+    
+    val DEBUG = properties_dict.get("debug_flag").toString().toBoolean
+     
+    if (DEBUG) {
+    	 println(vbaSqlString)
+    	 vba_position_common_df.show()
+    }
+    return vba_position_common_df
+  }
+  
+  def getTASql(properties_dict : Properties): String = {
+    val previousTwoYearsDate = DateUtility.getPastDate(2)
+       return "SELECT distinct a.ACCT_ID, a.ACCT_POSN_ID, a.VAST_ACCT_NO , a.PORT_ID, a.efftv_bgn_dt, a.efftv_end_dt From " + 
+    		properties_dict.getProperty("tmutl_fnd_posn_tableName") + " a Where from_unixtime(unix_timestamp(a.efftv_end_dt, 'yyyy-MM-dd'), 'yyyy-MM-dd') > '" + previousTwoYearsDate +
+    		"' group by a.ACCT_ID, a.ACCT_POSN_ID, a.VAST_ACCT_NO , a.PORT_ID, a.efftv_bgn_dt, a.efftv_end_dt"
+  }
+
+  
+  def getVBSSql(properties_dict : Properties): String = {
+    val previousTwoYearsDate = DateUtility.getPastDate(2)
+       return "SELECT distinct a.ACCT_ID, a.ACCT_POSN_ID, a.efftv_bgn_dt, a.efftv_end_dt From " + 
+    		properties_dict.getProperty("tacct_posn_brk_tableName") + " a Where from_unixtime(unix_timestamp(a.efftv_end_dt, 'yyyy-MM-dd'), 'yyyy-MM-dd') > '" + previousTwoYearsDate + 
+    		"' group by a.ACCT_ID, a.ACCT_POSN_ID, a.efftv_bgn_dt, a.efftv_end_dt"
+  }
+  
+  def calculate_divisionCode_on_repCode( spark:SparkSession, properties_dict:Properties): DataFrame = {
+    val DEBUG = properties_dict.get( "debug_flag" ).toString().toBoolean
+      
+  	val tacct_posn_brk_df = CommonDfsUtility.calculate_VBS_position_common_df(spark, properties_dict)
+  	tacct_posn_brk_df.registerTempTable("tacct_posn_brk_table")
+  	
+  	val tacct_brkg_sql = getSQL_tacct_brkg(properties_dict)
+  	val tacct_brkg_df = spark.sql(tacct_brkg_sql)
+  	tacct_brkg_df.registerTempTable("tacct_brkg_table")
+  
+  	if (DEBUG) {
+  	    println(tacct_brkg_sql)
+  		tacct_brkg_df.show()
+  	}
+      
+      spark.udf.register("getDivisionCodeVBA_PosnServSgmntCD", DivisionCode.getDivisionCodeVBA_PosnServSgmntCD _)
+      spark.udf.register("getDivisionCodeVBA_MntryDivsnCD", DivisionCode.getDivisionCodeVBA_MntryDivsnCD _)
+  	
+      val joinDFSQL = "SELECT a.acct_id, a.acct_posn_id, getDivisionCodeVBA_PosnServSgmntCD(b.rep_cd) as posn_serv_sgmnt_cd, getDivisionCodeVBA_MntryDivsnCD(b.rep_cd) as mntry_divsn_cd, a.efftv_bgn_dt, a.efftv_end_dt " +
+  			"FROM tacct_posn_brk_table a INNER JOIN tacct_brkg_table b ON a.acct_id = b.acct_id"
+  
+  	val division_repcode_df = spark.sql(joinDFSQL)
+  	
+      if (DEBUG) {
+          println(joinDFSQL)
+          division_repcode_df.show()
+      }
+      
+      return division_repcode_df
+  }
+   
+   def getSQL_tacct_brkg(properties_dict: Properties): String = {
+
+    val tacct_brkg = s"SELECT acct_id, rep_cd FROM ${properties_dict.getProperty("tacct_brkg_tableName")}"
+    return tacct_brkg
+  }
+ 
+}
