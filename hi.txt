@@ -118,6 +118,7 @@ var t:three = new three
 -------------------------------------------------------------------------------------------------------------------------------
 variables:
 No primitive datatypes, All variables are objects
+A variable of a non-primitive type doesn't contain the value directly; instead, it is a reference (similar to a pointer) to an object. (It is not possible in Java to create user-defined value types). Java has eight primitive types: byte , short , int , long , char , boolean , float and double
 Examples: var x:Int = 1 // we can changed this value
 	       Var name:String = “Praveen”
 	       val y:Int = 2 // we can’t change this value
@@ -269,3 +270,127 @@ object array {
   }
 }
 -------------------------------------------------------------------------------------------------------------------------------
+Diamond Problem:
+trait first {
+  def show(){
+    println("show trait first function")
+  }
+}
+trait second extends first {
+  override def show(){
+    println("show trait second function")
+  }
+}
+trait third extends first {
+  override def show(){
+    println("show trait third function")
+  }
+}
+class fourth extends second with first // output = show trait second function
+
+object diamondProblem {
+  def main(args: Array[String]){
+    var to:fourth = new fourth
+    to.show()
+  }
+}
+Note:- scala reads farthest or right side of the traits 
+//class fourth extends third with first // output = show trait third function
+//class fourth extends third with second // output = show trait second function
+--------------------------------------------------------------------------------------------------------------------------------
+Anonymous functions:- Anonymous funtions in sourcecode are called function literals at run time, function literals are instantiated into objects
+object anonymousFunction {
+  
+  def main(args: Array[String]){
+    var f =(x:Int,y:Int)=>{"value: "+(x*y)}
+    println(f(5,5))
+  }
+}
+note:-
+A function that doesn't have any name is called anonymous function.
+i.e left side write what type parameters used => right side write logic to return 
+Above we passed values at time of function calling.
+--------------------------------------------------------------------------------------------------------------------------------
+High Order functions:- The functions that takes other functions as parameters and whose result is a function.
+object highOrderFunction {
+  // create anonymous function
+  def perform(f:(Int,Int)=>Int){
+      println(f(5,5)) 
+    }
+    
+  def main(args: Array[String]){
+    // passed anonymous as parameter here,so it is called high order function.
+    perform((x:Int,y:Int)=>x*y)
+  }
+}
+Note:-
+As function is instantiated into object that object will stored in "f"(here, f is representing as object).
+here "perform" is function, "f" is object, anonymous function takes two parameters (Int, Int)and returns type (Int)
+you can change the logic at the time of passing argument.
+----------------------------------------------------------------------------------------------------------------------------
+Currying function:- A function that takes multiple parameter function into function which will take a single parameter and return data type for that function will be an anonymous function which is going to take the remaining parameter
+
+object currying {
+  //def add(a:Int,b:Int)={a+b}
+  def add(a:Int)={(b:Int)=>a+b}
+  
+  def main(args: Array[String]){
+  println("Result: "+add(5)(5))
+  }
+}
+Note:-
+ * when ever you convert function into the form, which will takes single parameter so the return data type of that function will be closure function.
+ * here is the example: add(a:Int,b:Int)={a+b} convert this function as add(a:Int)={(b:Int)=>a+b}
+ --------------------------------------------------------------------------------------------------------------------------------
+ Pattern Maching:-  scala has inbuilt pattern matching.here, print something when matches with case statements. 
+ 
+ Example-1:do pattern matching using variable creation.
+ object patternMaching {
+  def main(args: Array[String]){
+    var i:Int=1
+    i match
+    {
+      case 1=> print("first case")
+      case 2=> print("second case")
+      case _=> print("default case")
+    }  
+  }
+}
+output:- first case
+Example-2:- do pattern macthing by defining function.
+object patternMaching {
+  def find(x:Int):String=x match{
+    case 1=>"Hello"
+    case 2=>"World"
+    case _=>"Default"
+  }
+  def main(args: Array[String]){
+    print(find(3))
+  }
+}
+output:- Default
+Example-3:- do pattern matching by giving "Any" as argument.
+object patternMaching {
+  def find(x:Any):Any=x match{
+    case 1=>"Hello"
+    case "John"=>"Hi John"
+    case 2.3=>2.3+1
+  }
+  def main(args: Array[String]){
+    print(find(2.3))
+  }
+}
+output:- 3.3
+------------------------------------------------------------------------------------------------------------------------------
+Closure:- closure is a function which takes values from outside of that function.
+
+object closure {
+  def main(args: Array[String]){
+    var f:Int=10
+    val a=(x:Int)=>x*f
+    print(a(10))
+  }
+}
+output: 100
+Note:- Here, in above example shows created anonymous function, and that anonymous taking "f" value from outside.
+------------------------------------------------------------------------------------------------------------------------------
