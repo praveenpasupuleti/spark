@@ -1,0 +1,57 @@
+Type-1:- (overwriting history)
+* This Type-1 change overwrites existing dimensional attribute with new information. It updates only the attributes, doesn't insert new records, and effect no keys.
+Type-2:- (preserving history)
+* This Type-2 change writes a record with the new attribute information and preserves a record of the old dimensional data. This change update metadata columns of existing records and insert new records.
+* strategy to implement SCD Type 2 in Hive:
+steps:
+1. Master table that is up-to-date with current and historical information.
+2. A table with incremental data that has been changed.
+3. Creation of a view that combines the master and the change table to create the current snapshot of the master table complete with history.
+4. Overwrite the master table with the newly created data from the view.
+* Technical considerations to implement this SCD Type-2 in Hive
+1. enable ACID transactions in Hive.
+2. currenlty ORC is the only file format that supports ACID transactions in Hive.As ORC is a write-once file format, changes are implemented using base files and delta files where insert, update and delete are recorded.
+* To enable transaction support in Hive need following parameters to be turned on.
+on client:
+ hive.support.concurrency = true
+ Hive.enforce.bucketing = true (Not required as of Hive 2.0)
+ hive.exec.dynamic.partition.mode = nonstrict
+ hive.txn.manager = org.apache.hadoop.hive.ql.lockmgr.DbTxnManager
+ on metastore:
+ hive.compactor.initiator.on – true (See table below for more details)
+ hive.compactor.worker.threads – a positive number on at least one instance of the Thrift metastore service
+
+How to implement SCD using spark:
+1. to load data into spark(the datastructure of choice to use conext is dataframe)
+2. modify (update or insert the dataset)
+3. save the data with specific saveMode of append or overwrite.
+Note:- spark doesnot supports Hive Transactions because if multiple processes are going to attempt writing to the same underlying records, the results are not going to be predictable.
+
+design considerations:
+* To check whether incoming data is existed or not, find out whether data has changed or not, for that need to generate surrogate key using Hive UDF.
+* if that incoming data has changed means we do a set up of updates and deletes based on our SCD metadata design.
+
+updates and inserts:
+* very common approach to deal type-2 SCD is to add three pieces of metadata per record
+ i.e (1) effective start date (2) effective end-date (3) active record flag.
+* first population of a record would make the record active and effective end-date a predetermined date far into the future.
+* when same records comes in with changes, we update the existing records effective date = current day or current day -1, flip active flag bit = "No" and insert the changed records effect start date = current date or current date +1, active flag = "on".
+Note:- this approach is suitable for multiple records for the same entity.
+
+records deleted from source system:
+*Various modeling approaches can be taken to flag a record in the data lake as a record deleted from the source system. One simple way to do that is to update the end date to be a date in the past (typically date value = current date - 1). More complex issue is to be able to identify the records that have been deleted.
+
+* The best case scenario is where the source system performs a soft delete by updating a flag in the source record. The data lake processing routine can identify the records that have been deleted by checking the flag and take appropriate action.
+* Next best scenario is where the source system performs hard deletes but keeps a tally of the deleted record in a table. We can pull the information on a daily basis and take appropriate update actions.
+* If there is no information available as to which records have been deleted, we have to compare all the records in the source system to all the records in the historical files to identify the records that are not there in the source system and exists in the data lake store. Simplest approach to doing this is to compare only the unique identifiers rather than the whole record to identify the deleted records.
+* Change data capture will store all record manipulations as they take place. We can then query the CDC data to pull out deletes directly and take appropriate actions
+
+Change Data Capture:
+1)brute force cdc generate queries.
+        a) retrieve HDFS scratch space flag
+        b) decision check scratch space flag for creating temp tables.
+2) create temp table for master load
+3) brute force cdc run spark python 
+4) load master from scratch space.
+5) current partition from swapping.
+
