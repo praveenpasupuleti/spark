@@ -85,6 +85,7 @@ trait two
 }
 class three extends one with two
 {
+       // since variable x in trait then of type Int is not defined (Note that variables need to be initialized to be defined), so defined here as below
 	var x=12
 	def fun()
 	{
@@ -107,6 +108,8 @@ notes:
 * multiple classes and multiple traits can be extends
 * we can multiple traits and classes in single class
 * abstract member may not have private variable i.e private var x:Int will not works
+* concrete fields can have private variable i.e private var y:Int will works.
+* all abstract fields needs to defined in the class to use
 
 important notes:
 how to instantiate
