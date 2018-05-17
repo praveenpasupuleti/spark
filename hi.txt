@@ -531,5 +531,45 @@ Note:-
  *Here variable marks is defined using "val" but actually created using scala.collection.mutable.Map
  * So you can be add, remove and update the elements
  --------------------------------------------------------------------------------------------------------------------------------
+Acess Modifiers:
  
- 
+class A{
+   private def func2() {
+     println("func2")
+   }
+   protected def f() {
+     println("f")
+   }
+   def func3() {
+     println("func3")
+   }
+}
+class B extends A {
+  // func2() //private members cannot access from sub-class
+  f()        // protected members can access from sub-class
+  func3()    // public members can access from sub-class
+}
+class other {
+  // (new A).func2() // private members cannot access from other class
+  // (new A).f()     // protected members cannot access from other class
+  (new A).func3() // public members can access from other class
+}
+object privateAccessModifier {
+  def main(args: Array[String]){
+  var ob:A=new A
+  // ob.func2() // you can call private member from main method.
+  // ob.f()     // you can call protected member from main method.
+  ob.func3()    // public members are good to call 
+  }
+}
++---------------------------------------------------------+
+                public       private        protected     -
+sub-class 	yes		no		yes	  -
+other class	yes		no		no        -
+main method	yes		no		no        -
+----------------------------------------------------------+
+Note:-
+Private members:- A private member is visible only inside the class or object that contains the member definition.
+Protected members:- A protected member is only accessible from subclasses of the class in which the member is defined.
+Public members:- public members are accessed anywhere
+----------------------------------------------------------------------------------------------------------------------------------
