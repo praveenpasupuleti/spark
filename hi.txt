@@ -85,7 +85,8 @@ trait two
 }
 class three extends one with two
 {
-       // since variable x in trait then of type Int is not defined (Note that variables need to be initialized to be defined), so defined here as below
+       // since variable x in trait then of type Int is not defined (Note that variables need to be initialized to be defined),
+       so defined here as below
 	var x=12
 	def fun()
 	{
@@ -117,11 +118,14 @@ how to instantiate
 var t:three = new three
     t.func()
     */
-* Here "t" is variable, instantiated class "three" because we are returning that class information and used "func()" function we are returning that function information.
+* Here "t" is variable, instantiated class "three" because we are returning that class information and used "func()" function 
+we are returning that function information.
 -------------------------------------------------------------------------------------------------------------------------------
 variables:
 No primitive datatypes, All variables are objects
-A variable of a non-primitive type doesn't contain the value directly; instead, it is a reference (similar to a pointer) to an object. (It is not possible in Java to create user-defined value types). Java has eight primitive types: byte , short , int , long , char , boolean , float and double
+A variable of a non-primitive type doesn't contain the value directly; 
+instead, it is a reference (similar to a pointer) to an object. (It is not possible in Java to create user-defined value types). 
+Java has eight primitive types: byte , short , int , long , char , boolean , float and double
 Examples: var x:Int = 1 // we can changed this value
 	       Var name:String = “Praveen”
 	       val y:Int = 2 // we can’t change this value
@@ -227,7 +231,8 @@ object default_arguments {
 }
 
 Note:
-•	default arguments are arguments with default values, that values will be used when ever that function called without specific arguments.
+•	default arguments are arguments with default values, that values will be used 
+when ever that function called without specific arguments.
 •	You can’t change the order of that arguments.
 ----------------------------------------------------------------------------------------------------------------------------------
 Named Arguments:
@@ -317,7 +322,8 @@ Note:- scala reads farthest or right side of the traits
 //class fourth extends third with first // output = show trait third function
 //class fourth extends third with second // output = show trait second function
 --------------------------------------------------------------------------------------------------------------------------------
-Anonymous functions:- Anonymous funtions in sourcecode are called function literals at run time, function literals are instantiated into objects
+Anonymous functions:- Anonymous funtions in sourcecode are called function literals at run time.
+function literals are instantiated into objects
 object anonymousFunction {
   
   def main(args: Array[String]){
@@ -347,7 +353,8 @@ As function is instantiated into object that object will stored in "f"(here, f i
 here "perform" is function, "f" is object, anonymous function takes two parameters (Int, Int)and returns type (Int)
 you can change the logic at the time of passing argument.
 ----------------------------------------------------------------------------------------------------------------------------
-Currying function:- A function that takes multiple parameter function into function which will take a single parameter and return data type for that function will be an anonymous function which is going to take the remaining parameter
+Currying function:- A function that takes multiple parameter function into function which will take a single parameter
+and return data type for that function will be an anonymous function which is going to take the remaining parameter
 
 object currying {
   //def add(a:Int,b:Int)={a+b}
@@ -358,7 +365,8 @@ object currying {
   }
 }
 Note:-
- * when ever you convert function into the form, which will takes single parameter so the return data type of that function will be closure function.
+ * when ever you convert function into the form, which will takes single parameter so the return data type of that function will be
+ closure function.
  * here is the example: add(a:Int,b:Int)={a+b} convert this function as add(a:Int)={(b:Int)=>a+b}
  --------------------------------------------------------------------------------------------------------------------------------
  Pattern Maching:-  scala has inbuilt pattern matching.here, print something when matches with case statements. 
@@ -485,8 +493,10 @@ object listCollection {
 }
 Note
  * range:- syntax List.range(first element, last element, third parameter to change step size)
- * last element will not included in the list if you are using range function means. Here, third parameter will add to each and every element in the List.
- * Like this example actually program output shows like this List(1, 3, 5, 7, 9) internally happens like this (1, 1+2=3,3+3=5,5+2=7,7+2=9)
+ * last element will not included in the list if you are using range function means. Here, third parameter will add to each and every
+ element in the List.
+ * Like this example actually program output shows like this List(1, 3, 5, 7, 9) internally happens like this (1,
+ 1+2=3,3+3=5,5+2=7,7+2=9)
  
  * tabulate:- List.tabulate(no of total elements){specify logic}
  * fill:- List.fill(no of total elements){what elements you insert}
@@ -510,7 +520,8 @@ Note
 Note:-
  * Here marks variable is defined with variable type "var"
  * so you can add or remove elements. but you cannot update elements even though it's defined using "var"
- * To update you have to define like shown i.e var marks=scala.collection.mutable.Map("praveen"->123,"sampath"->321) output: key:sumiya, Value:420key:praveen, Value:23
+ * To update you have to define like shown i.e var marks=scala.collection.mutable.Map("praveen"->123,"sampath"->321) output: key:sumiya,
+ Value:420key:praveen, Value:23
 ----------------------------------------------------------------------------------------------------------------------------------
 mutable map class:-
 object mutableMap {
