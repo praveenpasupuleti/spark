@@ -146,6 +146,23 @@ object variables {
 output:
 a value: 12
 b value: 5
+
+Example:- Here we can change variables values as below. Here we again defined those variablesin main method.
+object practise {
+  val p:Int=123
+  var q:Int=321
+   //val p=840 // not work here
+  def main(args:Array [String]){
+    q=420
+    val p=840 // works here
+   // var p=840 // also change variable types (val or var)
+    println(p)
+    println(q)
+  }  
+}
+output:
+840
+420
 -------------------------------------------------------------------------------------------------------------------------------		
 class:
 In class we can declare variables and define methods.
