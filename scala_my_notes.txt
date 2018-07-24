@@ -573,21 +573,22 @@ class A{
    }
 }
 class B extends A {
-  // func2() //private members cannot access from sub-class
-  f()        // protected members can access from sub-class
-  func3()    // public members can access from sub-class
+ // func2()    //private members cannot access from sub-class
+    f()        // protected members can access from sub-class
+    func3()    // public members can access from sub-class
 }
 class other {
   // (new A).func2() // private members cannot access from other class
   // (new A).f()     // protected members cannot access from other class
-  (new A).func3() // public members can access from other class
+     (new A).func3() // public members can access from other class
 }
 object privateAccessModifier {
   def main(args: Array[String]){
   var ob:A=new A
-  // ob.func2() // you can call private member from main method.
-  // ob.f()     // you can call protected member from main method.
-  ob.func3()    // public members are good to call 
+  // ob.func2()    // you cannot call private member from main method.
+  // ob.f()        // you cannot call protected member from main method.
+     ob.func3()    // public members are good to call
+    
   }
 }
 +---------------------------------------------------------+
