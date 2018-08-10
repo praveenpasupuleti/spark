@@ -1,0 +1,151 @@
+package com.vanguard.dms.clientinterest.clientretriever
+
+import com.vanguard.dms.utilities.PropertiesReader
+import java.util.Properties
+import org.apache.spark.sql.DataFrame
+import org.apache.spark.sql.SparkSession
+import org.apache.spark.storage.StorageLevel
+import com.vanguard.dms.utilities.DmsConstants
+import com.vanguard.dms.utilities.DmsQueryBuilder
+
+object ClientRetriever {
+  
+  private var DEBUG: Boolean = false
+  private val TEMP_VIEW_1 = "tempView1"
+  private val TEMP_VIEW_2 = "tempView2"
+  
+  def main(args: Array[String]) {
+    if (args.length < 1) {
+      System.err.println("Missing properties file")
+      System.exit(1)
+    }
+
+    val APP_NAME = getAppName()
+
+    val spark = SparkSession
+      .builder()
+      .enableHiveSupport()
+      .appName(APP_NAME)
+      .config("spark.sql.parquet.writeLegacyFormat", "true")
+      .getOrCreate()
+
+    val properties = PropertiesReader.get_properties(args(0), args)
+
+    retrieveClients(spark, properties)
+
+    spark.stop()
+  }
+  
+  def retrieveClients(spark: SparkSession, properties: Properties): DataFrame = {
+    DEBUG = properties.getProperty("debug_flag").toString().toBoolean
+    val taClients = getTaClients(spark, properties)
+    val vbaClients = getVbaClients(spark, properties)
+    val vbsClients = getVbsClients(spark, properties)
+    val allClients = taClients.union(vbaClients).union(vbsClients)
+    taClients.unpersist()
+    vbaClients.unpersist()
+    vbsClients.unpersist()
+    return allClients
+  }
+  
+  private def getTaClients(spark: SparkSession, properties: Properties): DataFrame = {
+    val taQuery1 = DmsQueryBuilder.getTaQuery1(properties)
+    //select tsag.SAG_ID, TSAG_BUS_RLSHP.po_id, tacct.acct_id from entmaster.tsag join entmaster.TSAG_BUS_RLSHP on (tsag.sag_id = TSAG_BUS_RLSHP.sag_id) join entmaster.TSAG_ACCT_RLSHP on (TSAG_BUS_RLSHP.sag_id = TSAG_ACCT_RLSHP.sag_id) join entmaster.tacct on (tsag_acct_rlshp.rlshp_id = tacct.acct_id) where (tsag.serv_id = '08' or tsag.serv_id = '38') and TSAG_BUS_RLSHP.PO_ROLE_CD = 'PRRT' and tacct.RTRMT_PLN_TYP_CD not in ('0004', '0005', '0006','0007', '0008', '0009', '0010','0011', '0012', '0013', '0014','0015', '0099', '0100')
+    
+    println("taQuery1 = " + taQuery1)
+    val taQuery1DF = spark.sql(taQuery1)
+    taQuery1DF.persist(StorageLevel.DISK_ONLY)
+    taQuery1DF.createOrReplaceTempView(TEMP_VIEW_1)
+    
+    val taQuery2 = DmsQueryBuilder.getTaQuery2(properties)
+    //select tempView1.po_id, tempView1.acct_id, 'TA' as db_source, tcin015.ste_cd FROM entmaster.tcin015 join entmaster.tsag_addr_rlshp on (tsag_addr_rlshp.addr_id = tcin015.addr_id) join tempView1  on (tempView1.sag_id = tsag_addr_rlshp.sag_id) where tsag_addr_rlshp.addr_pool_typ_cd = 'MA' and tsag_addr_rlshp.rlshp_typ_cd = 'RGST' and tcin015.ste_cd = 'PA'
+      
+    println("taQuery2 = " + taQuery2)
+    val taQuery2DF = spark.sql(taQuery2)
+    taQuery2DF.persist(StorageLevel.DISK_ONLY)
+    
+    val success = spark.catalog.dropTempView(TEMP_VIEW_1)
+    if (DEBUG) println("drop temp view named '" + TEMP_VIEW_1 + "' success flag = " + success)
+    taQuery1DF.unpersist()
+    
+    if (DEBUG) taQuery2DF.show()
+    
+    return taQuery2DF
+  }
+  
+  private def getVbaClients(spark: SparkSession, properties: Properties): DataFrame = {
+    val vbaQuery1 = DmsQueryBuilder.getVbaQuery1(properties)
+    //select distinct tsag_bus_rlshp.po_id, tsag_bus_rlshp.sag_id from entmaster.tsag_bus_rlshp join entmaster.tsag on (tsag_bus_rlshp.sag_id = tsag.sag_id) where tsag.serv_id = 90 and date(tsag.efftv_end_dt) > current_date and tsag_bus_rlshp.po_role_cd = 'PRRT' and date(tsag_bus_rlshp.efftv_end_dt) > current_date
+    
+    println("vbaQuery1 = " + vbaQuery1)
+    val vbaQuery1DF = spark.sql(vbaQuery1)
+    if (DEBUG) vbaQuery1DF.show()
+    vbaQuery1DF.persist(StorageLevel.DISK_ONLY)
+    vbaQuery1DF.createOrReplaceTempView(TEMP_VIEW_1)
+    
+    val vbaQuery2 = DmsQueryBuilder.getVbaQuery2(properties)
+    //select tempView1.po_id, tsag_acct_rlshp.sag_id, tacct.acct_id from tempView1 join entmaster.tsag_acct_rlshp on (tempView1.sag_id = tsag_acct_rlshp.sag_id) join entmaster.tacct on (tsag_acct_rlshp.rlshp_id = tacct.acct_id) where tacct.rtrmt_pln_typ_cd not in ('0004','0005','0006','0007','0008','0009','0010','0011','0012','0013','0014','0015','0099','0100')
+      
+    println("vbaQuery2 = " + vbaQuery2)
+    val vbaQuery2DF = spark.sql(vbaQuery2)
+    if (DEBUG) vbaQuery2DF.show()
+    vbaQuery2DF.persist(StorageLevel.DISK_ONLY)
+    val success = spark.catalog.dropTempView(TEMP_VIEW_1)
+    if (DEBUG) println("drop temp view named '" + TEMP_VIEW_1 + "' success flag = " + success)
+    vbaQuery1DF.unpersist()
+    vbaQuery2DF.createOrReplaceTempView(TEMP_VIEW_2)
+    
+    val vbaQuery3 = DmsQueryBuilder.getVbaQuery3(properties)
+    //select tempView2.po_id, tempView2.acct_id, 'VBA' as db_source, tcin015.ste_cd from tempView2 join entmaster.tsag_addr_rlshp on (tempView2.sag_id = tsag_addr_rlshp.sag_id) join entmaster.tcin015 on (tsag_addr_rlshp.addr_id = tcin015.addr_id) where tsag_addr_rlshp.addr_pool_typ_cd = 'MA' and tsag_addr_rlshp.rlshp_typ_cd = 'RGST' and tcin015.ste_cd = 'PA'
+    
+    println("vbaQuery3 = " + vbaQuery3)
+    val vbaQuery3DF = spark.sql(vbaQuery3)
+    if (DEBUG) vbaQuery3DF.show()
+    vbaQuery3DF.persist(StorageLevel.DISK_ONLY)
+    val success2 = spark.catalog.dropTempView(TEMP_VIEW_2)
+    if (DEBUG) println("drop temp view named '" + TEMP_VIEW_2 + "' success flag = " + success2)
+    vbaQuery2DF.unpersist()
+    
+    return vbaQuery3DF
+  }
+  
+  private def getVbsClients(spark: SparkSession, properties: Properties): DataFrame = {
+    val vbsQuery1 = DmsQueryBuilder.getVbsQuery1(properties)
+    //select distinct tsag_bus_rlshp.po_id, tsag_bus_rlshp.sag_id from entmaster.tsag_rlshp join entmaster.tsag on (tsag.sag_id = tsag_rlshp.ownr_sag_id) join entmaster.tsag_bus_rlshp on (tsag_bus_rlshp.sag_id = tsag.sag_id) where tsag_rlshp.sag_rlshp_typ_cd = 9 and tsag.serv_id = 38 and date(tsag.efftv_end_dt) > current_date and tsag_bus_rlshp.po_role_cd = 'PRRT' and date(tsag_bus_rlshp.efftv_end_dt) > current_date
+      
+    println("vbsQuery1 = " + vbsQuery1)
+    val vbsDf1 = spark.sql(vbsQuery1)
+    if (DEBUG) vbsDf1.show()
+    vbsDf1.persist(StorageLevel.DISK_ONLY)
+    vbsDf1.createOrReplaceTempView(TEMP_VIEW_1)
+    
+    val vbsQuery2 = DmsQueryBuilder.getVbsQuery2(properties)
+    //select distinct tempView1.po_id, tsag_acct_rlshp.sag_id, tacct.acct_id from tempView1 join entmaster.tsag_acct_rlshp on (tempView1.sag_id = tsag_acct_rlshp.sag_id) join entmaster.tacct on (tsag_acct_rlshp.rlshp_id = tacct.acct_id) where tacct.rtrmt_pln_typ_cd not in ('0004','0005','0006','0007','0008','0009','0010','0011','0012','0013','0014','0015','0099','0100')
+      
+    println("vbsQuery2 = " + vbsQuery2)
+    val vbsDf2 = spark.sql(vbsQuery2)
+    if (DEBUG) vbsDf2.show()
+    vbsDf2.persist(StorageLevel.DISK_ONLY)
+    var success = spark.catalog.dropTempView(TEMP_VIEW_1)
+    if (DEBUG) println("drop temp view named '" + TEMP_VIEW_1 + "' success flag = " + success)
+    vbsDf2.unpersist()
+    vbsDf2.createOrReplaceTempView(TEMP_VIEW_2)
+    
+    val vbsQuery3 = DmsQueryBuilder.getVbsQuery3(properties)
+    //select tempView2.po_id, tempView2.acct_id, 'VBS' as db_source, tcin015.ste_cd from tempView2 join entmaster.tsag_addr_rlshp on (tempView2.sag_id = tsag_addr_rlshp.sag_id) join entmaster.tcin015 on (tsag_addr_rlshp.addr_id = tcin015.addr_id) where tsag_addr_rlshp.addr_pool_typ_cd = 'MA' and tsag_addr_rlshp.rlshp_typ_cd = 'RGST' and tcin015.ste_cd = 'PA'
+    
+    println("vbsQuery3 = " + vbsQuery3)
+    val vbsDf3 = spark.sql(vbsQuery3)
+    if (DEBUG) vbsDf3.show()
+    vbsDf3.persist(StorageLevel.DISK_ONLY)
+    success = spark.catalog.dropTempView(TEMP_VIEW_2)
+    if (DEBUG) println("drop temp view named '" + TEMP_VIEW_2 + "' success flag = " + success)
+    vbsDf2.unpersist()
+    
+    return vbsDf3
+  }
+  
+  def getAppName(): String = {
+    return "Client Interest - Client Retriever scala application"
+  }
+}
