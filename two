@@ -1,0 +1,99 @@
+package com.vanguard.dms.utilities
+
+import java.util.Properties
+
+object DmsQueryBuilder{
+  private val TEMP_VIEW_1 = "tempView1"
+  private val TEMP_VIEW_2 = "tempView2"
+  
+  def getTaQuery1(properties: Properties): String = {
+    val tsag_tableName = properties.getProperty(DmsConstants.TSAG_TABLENAME)
+    val tsag_bus_rlshp_tableName = properties.getProperty(DmsConstants.TSAG_BUS_RLSHP_TABLENAME)
+    val tsag_acct_rlshp_tableName = properties.getProperty(DmsConstants.TSAG_ACCT_RLSHP_TABLENAME)
+    val tacct_tableName = properties.getProperty(DmsConstants.TACCT_TABLENAME)
+    
+    return "select vsag.SAG_ID, VSAG_BUS_RLSHP.po_id, tacct.acct_id from " + tsag_tableName +
+      " join " + tsag_bus_rlshp_tableName + " on (vsag.sag_id = VSAG_BUS_RLSHP.sag_id) " + 
+      "join " + tsag_acct_rlshp_tableName + " on (VSAG_BUS_RLSHP.sag_id = TSAG_ACCT_RLSHP.sag_id) " + 
+      "join " + tacct_tableName  + " on (tsag_acct_rlshp.rlshp_id = tacct.acct_id) " + 
+      "where (vsag.serv_id = '08' or vsag.serv_id = '38') " + 
+      "and VSAG_BUS_RLSHP.PO_ROLE_CD = 'PRRT' " + 
+      "and tacct.RTRMT_PLN_TYP_CD not in ('0004', '0005', '0006','0007', '0008', '0009', '0010','0011', '0012', '0013', '0014','0015', '0099', '0100')"
+  }
+  
+  def getTaQuery2(properties: Properties): String = {
+    val tsag_addr_rlshp_tableName = properties.getProperty(DmsConstants.TSAG_ADDR_RLSHP_TABLENAME)
+    val tcin015_tableName = properties.getProperty(DmsConstants.TCIN015_TABLENAME)
+    
+    return "select " + TEMP_VIEW_1 + ".po_id, " + TEMP_VIEW_1 + ".acct_id, 'TA' as db_source, tcin015.ste_cd FROM " + tcin015_tableName + 
+      " join " + tsag_addr_rlshp_tableName  + " on (tsag_addr_rlshp.addr_id = tcin015.addr_id) " + 
+      "join " + TEMP_VIEW_1 + " on (" + TEMP_VIEW_1 + ".sag_id = tsag_addr_rlshp.sag_id) " + 
+      "where tsag_addr_rlshp.addr_pool_typ_cd = 'MA' and tsag_addr_rlshp.rlshp_typ_cd = 'RGST' and tcin015.ste_cd = 'PA'"
+  }
+  
+  def getVbaQuery1(properties: Properties): String = {
+    val tsag_bus_rlshp_tableName = properties.getProperty(DmsConstants.TSAG_BUS_RLSHP_TABLENAME)
+    val tsag_tableName = properties.getProperty(DmsConstants.TSAG_TABLENAME)
+    
+    return "select distinct vsag_bus_rlshp.po_id, vsag_bus_rlshp.sag_id from " + tsag_bus_rlshp_tableName + 
+      " join " + tsag_tableName + " on (vsag_bus_rlshp.sag_id = vsag.sag_id) " + 
+      "where vsag.serv_id = 90 " + 
+      "and date(vsag.efftv_end_dt) > current_date " + 
+      "and vsag_bus_rlshp.po_role_cd = 'PRRT' " + 
+      "and date(vsag_bus_rlshp.efftv_end_dt) > current_date"
+  }
+  
+  def getVbaQuery2(properties: Properties): String = {
+    val tsag_acct_rlshp_tableName = properties.getProperty(DmsConstants.TSAG_ACCT_RLSHP_TABLENAME)
+    val tacct_tableName = properties.getProperty(DmsConstants.TACCT_TABLENAME)
+    
+    return "select " + TEMP_VIEW_1 + ".po_id, tsag_acct_rlshp.sag_id, tacct.acct_id FROM " + TEMP_VIEW_1 + 
+      " join " + tsag_acct_rlshp_tableName  + " on (" + TEMP_VIEW_1 + ".sag_id = tsag_acct_rlshp.sag_id) " + 
+      "join " + tacct_tableName  + " on (tsag_acct_rlshp.rlshp_id = tacct.acct_id) " + 
+      "where tacct.rtrmt_pln_typ_cd not in ('0004','0005','0006','0007','0008','0009','0010','0011','0012','0013','0014','0015','0099','0100')"
+  }
+  
+  def getVbaQuery3(properties: Properties): String = {
+    val tsag_addr_rlshp_tableName = properties.getProperty(DmsConstants.TSAG_ADDR_RLSHP_TABLENAME)
+    val tcin015_tableName = properties.getProperty(DmsConstants.TCIN015_TABLENAME)
+    
+    return "select " + TEMP_VIEW_2 + ".po_id, " + TEMP_VIEW_2 + ".acct_id, 'VBA' as db_source, tcin015.ste_cd from " + TEMP_VIEW_2 + 
+      " join " + tsag_addr_rlshp_tableName  + " on (" + TEMP_VIEW_2 + ".sag_id = tsag_addr_rlshp.sag_id) " +
+      "join " + tcin015_tableName  + " on (tsag_addr_rlshp.addr_id = tcin015.addr_id) " +
+      "where tsag_addr_rlshp.addr_pool_typ_cd = 'MA' and tsag_addr_rlshp.rlshp_typ_cd = 'RGST' and tcin015.ste_cd = 'PA'"
+  }
+  
+  def getVbsQuery1(properties: Properties): String = {
+    val tsag_rlshp_tableName = properties.getProperty(DmsConstants.TSAG_RLSHP_TABLENAME)
+    val tsag_tableName = properties.getProperty(DmsConstants.TSAG_TABLENAME)
+    val tsag_bus_rlshp_tableName = properties.getProperty(DmsConstants.TSAG_BUS_RLSHP_TABLENAME)
+    
+    return "select distinct vsag_bus_rlshp.po_id, vsag_bus_rlshp.sag_id from " + tsag_rlshp_tableName +
+      " join " + tsag_tableName  + " on (vsag.sag_id = tsag_rlshp.ownr_sag_id) " +
+      "join " + tsag_bus_rlshp_tableName  + " on (vsag_bus_rlshp.sag_id = vsag.sag_id) " +
+      "where tsag_rlshp.sag_rlshp_typ_cd = 9 " +
+      "and vsag.serv_id = 38 and date(vsag.efftv_end_dt) > current_date " +
+      "and vsag_bus_rlshp.po_role_cd = 'PRRT' " +
+      "and date(vsag_bus_rlshp.efftv_end_dt) > current_date"
+  }
+  
+  def getVbsQuery2(properties: Properties): String = {
+    val tsag_acct_rlshp_tableName = properties.getProperty(DmsConstants.TSAG_ACCT_RLSHP_TABLENAME)
+    val tacct_tableName = properties.getProperty(DmsConstants.TACCT_TABLENAME)
+    
+    return "select distinct " + TEMP_VIEW_1 + ".po_id, tsag_acct_rlshp.sag_id, tacct.acct_id from " + TEMP_VIEW_1 +
+      " join " + tsag_acct_rlshp_tableName  + " on (" + TEMP_VIEW_1 + ".sag_id = tsag_acct_rlshp.sag_id) " +
+      "join " + tacct_tableName  + " on (tsag_acct_rlshp.rlshp_id = tacct.acct_id) " +
+      "where tacct.rtrmt_pln_typ_cd not in ('0004','0005','0006','0007','0008','0009','0010','0011','0012','0013','0014','0015','0099','0100')"
+  }
+  
+  def getVbsQuery3(properties: Properties): String = {
+    val tsag_addr_rlshp_tableName = properties.getProperty(DmsConstants.TSAG_ADDR_RLSHP_TABLENAME)
+    val tcin015_tableName = properties.getProperty(DmsConstants.TCIN015_TABLENAME)
+    
+    return "select " + TEMP_VIEW_2 + ".po_id, " + TEMP_VIEW_2 + ".acct_id, 'VBS' as db_source, tcin015.ste_cd from " + TEMP_VIEW_2 + 
+      " join " +  tsag_addr_rlshp_tableName + " on (" + TEMP_VIEW_2 + ".sag_id = tsag_addr_rlshp.sag_id) " +
+      "join " + tcin015_tableName  + " on (tsag_addr_rlshp.addr_id = tcin015.addr_id) " +
+      "where tsag_addr_rlshp.addr_pool_typ_cd = 'MA' and tsag_addr_rlshp.rlshp_typ_cd = 'RGST' and tcin015.ste_cd = 'PA'"
+  }
+}
