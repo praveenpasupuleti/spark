@@ -1,0 +1,96 @@
+package com.vanguard.dms.clientinterest
+
+import com.vanguard.dms.clientinterest.clientretriever.ClientRetriever
+import com.vanguard.dms.utilities.DateUtility
+import com.vanguard.dms.utilities.PropertiesReader
+import java.util.Properties
+import org.apache.spark.sql.DataFrame
+import org.apache.spark.sql.SparkSession
+import org.apache.spark.storage.StorageLevel
+import org.apache.spark.sql.functions._
+import com.vanguard.dms.utilities.DmsConstants
+import org.apache.spark.sql.SaveMode
+
+
+object ClientInterestDriver {
+
+  private var DEBUG: Boolean = false
+  val workflowId = "ClientInterest"
+
+  def main(args: Array[String]): Unit = {
+
+    if (args.length < 1) {
+      System.err.println("Missing properties file")
+      System.exit(1)
+    }
+
+    val APP_NAME = getAppName()
+
+    val spark = SparkSession
+      .builder()
+      .enableHiveSupport()
+      .appName(APP_NAME)
+      .config("spark.sql.parquet.writeLegacyFormat", "true")
+      .getOrCreate()
+
+    val properties = PropertiesReader.get_properties(args(0), args)
+    properties.setProperty("workflow_id", workflowId)
+    
+    DEBUG = properties.getProperty("debug_flag").toString().toBoolean
+    
+    buildClientInfoHiveTable(spark, properties)
+    
+    
+
+//    val finalDataFrame = buildDataframe(spark, properties)
+//    finalDataFrame.persist(StorageLevel.DISK_ONLY)
+//
+//    if (DEBUG) finalDataFrame.show()
+//    writeFiles(spark, finalDataFrame, properties);
+//   
+//    //We want to cast the data types of the columns to hive compatible formats so that we can save it directly to s3 as a hive compatible format
+//    val test = finalDataFrame.selectExpr("cast(po_id as decimal) po_id", "acct_id", "db_source", "ste_cd", getAddDateColumnCommand())
+//    finalDataFrame.unpersist()
+//    test.write.option("path", properties.getProperty(DmsConstants.CLIENT_INFO_TABLE_S3_PATH_PROPERTYNAME)).saveAsTable(DmsConstants.CLIENT_INFO_HIVE_TABLE_PROPERTYNAME)
+//    test.unpersist()
+    
+    spark.stop()
+  }
+  
+  def buildClientInfoHiveTable(spark: SparkSession, properties: Properties) = {
+    val clientInfoDf = ClientRetriever.retrieveClients(spark, properties)
+    clientInfoDf.persist(StorageLevel.DISK_ONLY)
+    
+    if (DEBUG) clientInfoDf.show()
+    val finalDataFrame = clientInfoDf.selectExpr("cast(po_id as integer) po_id", "acct_id", "db_source", "ste_cd", getAddDateColumnCommand())
+    clientInfoDf.unpersist()
+    finalDataFrame.write.option("path", properties.getProperty(DmsConstants.CLIENT_INFO_TABLE_S3_PATH_PROPERTYNAME)).mode(SaveMode.Overwrite).saveAsTable(getEtl1FullPath(properties))
+    finalDataFrame.unpersist()
+  }
+  
+  def getEtl1FullPath(properties: Properties): String = {
+    return properties.getProperty(DmsConstants.DMS_ETL_1_DBNAME) + "." + properties.getProperty(DmsConstants.CLIENT_INFO_HIVE_TABLE_PROPERTYNAME)
+  }
+  
+  def buildClientInterestHiveTable(spark: SparkSession, properties: Properties) = {
+    //call other methods to add rows for all the forms of client interest
+    //call other methods to add rows for all the other data we need like edelivery flag 
+  }
+  
+  
+  
+  def writeFiles(spark: SparkSession, finalDataFrame: DataFrame, properties: Properties) = {
+    val sqlContext = spark.sqlContext
+    import sqlContext.implicits._
+    finalDataFrame.map(_.mkString(",")).rdd.saveAsTextFile(properties.getProperty("data_item_dir") + "/" + properties.getProperty("workflow_id") + "/" + "DanTheMan1")
+  }
+  
+  def getAddDateColumnCommand(): String = {
+    return "cast('" + DateUtility.getCurrentDate() + "' as date) as run_dt"
+  }
+
+  def getAppName(): String = {
+    return "Combined Client Interest - TA & VBA & VBS scala application"
+  }
+
+}
