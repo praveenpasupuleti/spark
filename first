@@ -1,0 +1,17 @@
+package com.vanguard.dms.utilities
+
+object DmsConstants{
+  
+  val CLIENT_INFO_TABLE_S3_PATH_PROPERTYNAME = "client_info_table_s3_path"
+  val CLIENT_INFO_HIVE_TABLE_PROPERTYNAME = "client_info_hive_table"
+  val DMS_ETL_1_DBNAME = "dms_etl_1_dbName"
+  
+  val TACCT_TABLENAME = "tacct_tableName"
+  val TCIN015_TABLENAME = "tcin015_tableName"
+  val TSAG_ACCT_RLSHP_TABLENAME = "tsag_acct_rlshp_tableName"
+  val TSAG_ADDR_RLSHP_TABLENAME = "tsag_addr_rlshp_tableName"
+  val TSAG_BUS_RLSHP_TABLENAME = "tsag_bus_rlshp_tableName"
+  val TSAG_RLSHP_TABLENAME = "tsag_rlshp_tableName"
+  val TSAG_TABLENAME = "tsag_tableName"
+  
+}
